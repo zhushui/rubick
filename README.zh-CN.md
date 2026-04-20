@@ -1,106 +1,94 @@
 [English](./README.md) | 简体中文
 
-
-<div align= "center">
-<img align="center" width=200 src="./public/logo.png" />
+<div align="center">
+  <img align="center" width="200" src="./public/logo.png" />
 </div>
 
 <div align="center">
-    <h1>Rubick</h1>
-    <img alt="累计下载数" src="https://img.shields.io/github/downloads/rubickCenter/rubick/total" />
-    <a href="https://github.com/rubickCenter/rubick/releases"><img alt="最新发布版本" src="https://img.shields.io/github/package-json/v/rubickCenter/rubick" /></a>
-    <a href="https://github.com/rubickCenter/rubick/actions"><img alt="github action 构建" src="https://img.shields.io/github/actions/workflow/status/rubickCenter/rubick/main.yml" /></a>
-    <a href="https://github.com/rubickCenter/rubick/blob/master/LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/rubickCenter/rubick" /></a>
-    <a href="https://github.com/rubickCenter/rubick/stargazers"><img alt="github 收藏数" src="https://img.shields.io/github/stars/rubickCenter/rubick?style=social" /></a>
-    <a href="https://gitee.com/monkeyWang/rubick"><img alt="gitee 镜像源" src="https://img.shields.io/badge/Gitee--yellow.svg?style=social&logo=data:image/svg+xml;base64,PHN2ZyB0PSIxNTc0ODM3MTM4ODM3IiBjbGFzcz0iaWNvbiIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHAtaWQ9IjE3NzAiICAgICB3aWR0aD0iMTYiIGhlaWdodD0iMTYiPiAgICA8cGF0aCBkPSJNODkxIDQyOC44SDQ2NS44Yy0yMC40IDAtMzcgMTYuNS0zNyAzN3Y5Mi40YzAgMjAuNCAxNi41IDM3IDM3IDM3aDI1OC45YzIwLjQgMCAzNyAxNi42IDM3IDM3djE4LjRjMCA2MS4zLTQ5LjcgMTEwLjktMTEwLjkgMTEwLjlIMjk5LjRjLTIwLjQgMC0zNy0xNi42LTM3LTM3VjM3My4yYzAtNjEuMyA0OS43LTExMC45IDExMC45LTExMC45aDUxNy42YzIwLjQgMCAzNy0xNi41IDM3LTM3bDAuMS05Mi4zYzAtMjAuNC0xNi41LTM3LTM3LTM3SDM3My4zQzIyMC4yIDk2IDk2IDIyMC4yIDk2IDM3My4zVjg5MWMwIDIwLjQgMTYuNiAzNyAzNyAzN2g1NDUuNEM4MTYuMiA5MjggOTI4IDgxNi4zIDkyOCA2NzguNFY0NjUuOGMwLTIwLjQtMTYuNi0zNy0zNy0zN3oiICAgICAgICAgIGZpbGw9IiNkODFlMDYiIHAtaWQ9IjE3NzEiPjwvcGF0aD48L3N2Zz4=" /></a>
+  <h1>Rubick</h1>
+  <img alt="累计下载量" src="https://img.shields.io/github/downloads/zhushui/rubick/total" />
+  <a href="https://github.com/zhushui/rubick/releases"><img alt="最新版本" src="https://img.shields.io/github/package-json/v/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/actions/workflows/main.yml"><img alt="CI 状态" src="https://img.shields.io/github/actions/workflow/status/zhushui/rubick/main.yml?label=ci" /></a>
+  <a href="https://github.com/zhushui/rubick/blob/main/LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/zhushui/rubick?style=social" /></a>
 </div>
 
-<div align= "center">
-<img align="center" src="https://picx.zhimg.com/80/v2-f8fe09ef125dac5fdcbef3fe00f92b21_720w.png" />
+<div align="center">
+  <img align="center" src="https://picx.zhimg.com/80/v2-f8fe09ef125dac5fdcbef3fe00f92b21_720w.png" />
 </div>
 
-开源的插件化桌面端效率工具箱。插件是基于 npm 进行安装和卸载，非常轻便。插件数据支持 webdav 多端同步，非常安全。支持内网部署，可二次定制化开发，非常灵活。
+这个仓库是上游项目 [rubickCenter/rubick](https://github.com/rubickCenter/rubick) 的公开维护 fork。当前 fork 保留 `Rubick` 品牌和插件生态兼容目标，但工程演进、发布节奏、自动化流程和二次开发维护以本仓库为准。
 
-## 获取 rubick
-下载最新的安装包：
+## 当前定位
 
-* [Rubick Mac OS](https://github.com/rubickCenter/rubick/releases)
-* [Rubick Windows](https://github.com/rubickCenter/rubick/releases)
-* [Rubick Linux](https://github.com/rubickCenter/rubick/releases)
+- 公开维护 fork，不是一次性的临时分支。
+- 兼容上游仍然重要，尤其是插件安装链路与插件运行时行为。
+- 当前维护重点是：`Vite + tsup + pnpm` 工程迁移、Electron 运行时安全边界、打包一致性校正，以及 Windows 集成在新架构下的适配。
 
-## 使用文档
+## 当前 fork 的主要变化
 
-[Rubick 官网](https://rubick.vip)
+- 工程现代化：
+  迁移到 `pnpm workspace`、多入口 `Vite`、`tsup` 构建 main/preload，并清理历史 Vue CLI 产物和旧锁文件。
+- 更安全的 Electron 运行时：
+  主应用与内置页面改为桥接访问受控 API，默认启用 `contextIsolation: true` 和 `nodeIntegration: false`。
+- 迁移后的打包链路整理：
+  修正运行时资源路径、相对资源加载，并梳理 feature 子应用 CSP 与 Lottie 打包配置，使其和新构建链保持一致。
+- 用户可见层面的整理：
+  本地启动项文件选择与拖放体验优化，应用与插件搜索匹配及结果排序优化，历史与菜单交互优化，以及 Windows 宿主文件拖放链路在新架构下的适配。
 
-[Rubick Docs](https://rubickCenter.github.io/rubick/)
+## 兼容性与边界
 
-## 如何使用 rubick
+- 仓库开发、CI、发布统一使用 `pnpm`。
+- 运行时插件安装仍保持 npm 兼容，由 Rubick 的插件安装适配层承接。
+- 主应用内置页面已经采用更严格的安全模型。
+- 旧插件仍可通过兼容 preload 继续运行，但新开发建议优先使用桥接 API。
 
-安装完成 rubick 后，可以通过快捷键 Alt/Option+R  可以快速呼起主程序。主程序输入框内输入关键词可以搜索出对应的 App、插件、文件... 选择即可使用。如果没有想要的功能，可以点击左侧的 logo 进入插件市场寻找自己想要的插件进行安装。
+详细说明见：
 
-## 支持能力
-- [x] 基于 npm 包模式的插件管理，安装插件和安装 npm 包一样简单
-- [x] 支持 webdav 多端数据同步，真正的数据安全同步
-- [x] 独一无二的系统插件模式，让插件成为 rubick 的一部分
-- [x] 支持快速启动本地 app、文件、文件夹
-- [x] 支持企业化内网部署
-- [x] 支持多语言
+- [开发说明](./DEVELOPMENT.zh-CN.md)
+- [插件运行时兼容说明](./PLUGIN_RUNTIME.zh-CN.md)
 
+## 下载
 
-## 核心功能展示
-### 1. 搜索系统应用
-支持拼音和缩写来搜索系统安装应用：
+- [当前 fork Releases](https://github.com/zhushui/rubick/releases)
 
-![](https://pic1.zhimg.com/80/v2-70c105ff7fb1e955fc67ffa5a5564092_720w.gif)
+## 仓库开发
 
-### 2. UI类插件安装
-点击搜索框右侧 `rubick` 图标，进入插件市场，选择所需插件，点击下载按钮即可下载，下载完成后在已安装 tab 下可以找到安装插件。
-安装完成后，输入插件呼起命令即可使用对应插件：
-
-![](https://pic1.zhimg.com/80/v2-5906bba20fe0a67f9e7a5a8c11341305_720w.gif)
-
-### 3. 系统类插件安装
-系统插件安装方式和UI类一样，在插件市场选择`系统分类`，寻找适合自己的系统插件安装即可。
-
-```
-系统插件安装成功后，需要重启 rubick 才能生效
+```bash
+pnpm install
+pnpm dev
+pnpm build
+pnpm lint
+pnpm package:dir
+pnpm package
 ```
 
-### 4. 基于 webdav 的多端数据同步
-在 `rubick` 内搜索`偏好设置` 进入 `账户和设置` -> `多端数据同步`；即可对 `rubick` 插件使用数据进行 `导出` 和 `导入`。
+- Node 基线：`>=20`
+- 当前 CI 验证基线：Node `24`
+- `pnpm install` 会自动补齐 Electron 运行时并重建 Electron 相关原生依赖。
+- `pnpm package:dir` 是当前 fork 在 CI 中使用的 smoke package 命令。
 
-![](https://pic1.zhimg.com/80/v2-ff85793741e4dff82a729d3eb3d41551_720w.png)
+## 如何使用
 
-## 关联仓库
+安装 Rubick 后，按 `Alt/Option + R` 可快速唤起主程序。
+你可以直接在主输入框中搜索应用、插件、文件与文件夹。
 
-[Rubick 插件仓库](https://gitee.com/rubick-center)
+如果默认能力不够，可以点击左侧 Rubick logo 进入插件市场，安装所需插件。
 
-[Rubick 插件数据库](https://gitcode.net/rubickcenter/rubick-database)
+## 上游相关资源
 
-[Rubick Plugin CLI](https://github.com/rubickCenter/rubick-plugin-cli)
+当前 fork 仍然复用上游插件生态与相关资源：
 
-## 赞助
-### 1. 加入知识星球
-我们在知识星球积累了大量的关于 rubick 的知识和常见问题，您可以付费加入我们的知识星球来一起讨论。我们将随时解答！
+- [Rubick 插件仓库](https://gitee.com/rubick-center)
+- [Rubick 插件数据库](https://gitcode.net/rubickcenter/rubick-database)
+- [Rubick Plugin CLI](https://github.com/rubickCenter/rubick-plugin-cli)
 
-<img width=400 src=https://picx.zhimg.com/80/v2-6deabf65175d18080439ef813102d18c_720w.png />
+## 反馈与贡献
 
-### 2. 打赏喝杯咖啡
-如果项目对你有帮助，可以请我喝杯咖啡赞赏！
-
-<div align= "left">
-<img width="180" src="https://picx.zhimg.com/80/v2-911d249dc454f3460451a4e1ecceeb14_720w.png">
-<img width="180" src="https://picx.zhimg.com/80/v2-3160247d6099053405e6cd2cb6afb5e5_720w.png">
-</div>
-
-## 反馈
-对本项目有兴趣或者想要交流学习的同学可以扫码加下面的微信，备注 rubick，帮助我们更好的成长：
-
-![image](https://user-images.githubusercontent.com/21073039/127327603-9796f246-ee4b-4950-a69d-ce3205ec9569.png)
-
-## 贡献
-This project exists thanks to all the people who contribute. [[Contribute](https://github.com/rubickCenter/rubick/graphs/contributors)]. <a href="https://github.com/rubickCenter/rubick/graphs/contributors"><img src="https://opencollective.com/rubick/contributors.svg?width=890&button=false" /></a>
+- fork 相关问题、维护建议和改进请求，请优先提交到本仓库的 [Issues](https://github.com/zhushui/rubick/issues) 或 Pull Requests。
+- 如果问题在上游原版 Rubick 中也能稳定复现，仍然建议同步标注或反馈到上游。
+- 欢迎提交文档改进、插件兼容修复、打包修复和测试增强相关贡献。
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/rubickCenter/rubick/blob/master/LICENSE) file for details.
 
+本项目仍基于 MIT 协议开源，详见 [LICENSE](./LICENSE)。

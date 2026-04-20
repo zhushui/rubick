@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - skip-release-notes
+  categories:
+    - title: Breaking Changes
+      labels:
+        - breaking-change
+    - title: Runtime And Security
+      labels:
+        - runtime
+        - security
+        - electron
+    - title: Build And Release
+      labels:
+        - build
+        - packaging
+        - release
+        - ci
+    - title: Plugins And UX
+      labels:
+        - plugin
+        - ui
+        - feature
+        - bug
+    - title: Docs And Repository Maintenance
+      labels:
+        - documentation
+        - repository

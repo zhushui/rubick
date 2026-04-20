@@ -1,111 +1,97 @@
 English | [简体中文](./README.zh-CN.md)
 
-<div align= "center">
-<img align="center" width=200 src="./public/logo.png" />
+<div align="center">
+  <img align="center" width="200" src="./public/logo.png" />
 </div>
 
 <div align="center">
-    <h1>Rubick</h1>
-    <img alt="downloads" src="https://img.shields.io/github/downloads/rubickCenter/rubick/total" />
-    <a href="https://github.com/rubickCenter/rubick/releases"><img alt="latest release" src="https://img.shields.io/github/package-json/v/rubickCenter/rubick" /></a>
-    <a href="https://github.com/rubickCenter/rubick/actions"><img alt="github action building" src="https://img.shields.io/github/actions/workflow/status/rubickCenter/rubick/main.yml" /></a>
-    <a href="https://github.com/rubickCenter/rubick/blob/master/LICENSE"><img alt="license" src="https://img.shields.io/github/license/rubickCenter/rubick" /></a>
-    <a href="https://github.com/rubickCenter/rubick/stargazers"><img alt="github stars" src="https://img.shields.io/github/stars/rubickCenter/rubick?style=social" /></a>
-    <a href="https://gitee.com/monkeyWang/rubick"><img alt="gitee mirror" src="https://img.shields.io/badge/Gitee--yellow.svg?style=social&logo=data:image/svg+xml;base64,PHN2ZyB0PSIxNTc0ODM3MTM4ODM3IiBjbGFzcz0iaWNvbiIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHAtaWQ9IjE3NzAiICAgICB3aWR0aD0iMTYiIGhlaWdodD0iMTYiPiAgICA8cGF0aCBkPSJNODkxIDQyOC44SDQ2NS44Yy0yMC40IDAtMzcgMTYuNS0zNyAzN3Y5Mi40YzAgMjAuNCAxNi41IDM3IDM3IDM3aDI1OC45YzIwLjQgMCAzNyAxNi42IDM3IDM3djE4LjRjMCA2MS4zLTQ5LjcgMTEwLjktMTEwLjkgMTEwLjlIMjk5LjRjLTIwLjQgMC0zNy0xNi42LTM3LTM3VjM3My4yYzAtNjEuMyA0OS43LTExMC45IDExMC45LTExMC45aDUxNy42YzIwLjQgMCAzNy0xNi41IDM3LTM3bDAuMS05Mi4zYzAtMjAuNC0xNi41LTM3LTM3LTM3SDM3My4zQzIyMC4yIDk2IDk2IDIyMC4yIDk2IDM3My4zVjg5MWMwIDIwLjQgMTYuNiAzNyAzNyAzN2g1NDUuNEM4MTYuMiA5MjggOTI4IDgxNi4zIDkyOCA2NzguNFY0NjUuOGMwLTIwLjQtMTYuNi0zNy0zNy0zN3oiICAgICAgICAgIGZpbGw9IiNkODFlMDYiIHAtaWQ9IjE3NzEiPjwvcGF0aD48L3N2Zz4=" /></a>
+  <h1>Rubick</h1>
+  <img alt="downloads" src="https://img.shields.io/github/downloads/zhushui/rubick/total" />
+  <a href="https://github.com/zhushui/rubick/releases"><img alt="latest release" src="https://img.shields.io/github/package-json/v/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/actions/workflows/main.yml"><img alt="ci status" src="https://img.shields.io/github/actions/workflow/status/zhushui/rubick/main.yml?label=ci" /></a>
+  <a href="https://github.com/zhushui/rubick/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/stargazers"><img alt="github stars" src="https://img.shields.io/github/stars/zhushui/rubick?style=social" /></a>
 </div>
 
-<div align= "center">
-<img align="center" src="https://picx.zhimg.com/80/v2-f8fe09ef125dac5fdcbef3fe00f92b21_720w.png" />
+<div align="center">
+  <img align="center" src="https://picx.zhimg.com/80/v2-f8fe09ef125dac5fdcbef3fe00f92b21_720w.png" />
 </div>
-Open-source plugin-based desktop efficiency toolbox. The plugins are installed and uninstalled based on npm, which is very lightweight. The plugin data supports webdav multi-terminal synchronization, which is very secure. It supports internal network deployment and can be customized for further development, which is very flexible.
 
-## Get Rubick
-Download the latest release:
-* [Rubick Mac OS](https://github.com/rubickCenter/rubick/releases)
-* [Rubick Windows](https://github.com/rubickCenter/rubick/releases)
-* [Rubick Linux](https://github.com/rubickCenter/rubick/releases)
+This repository is a maintained public fork of [rubickCenter/rubick](https://github.com/rubickCenter/rubick).
+It keeps the Rubick product identity and plugin ecosystem compatibility, while this fork focuses on build modernization, tighter runtime boundaries, packaged-build consistency, and long-term maintainability.
 
-## Docs
+## Fork Status
 
-[Rubick website](https://rubick.vip)
+- Public maintained fork with its own release cadence and GitHub Actions workflows.
+- Upstream compatibility remains important, especially for plugin installation and runtime behavior.
+- Current maintenance focus: `Vite + tsup + pnpm` migration, preload bridge hardening, packaged-build consistency, and Windows integration compatibility under the new architecture.
 
-[Rubick Docs](https://rubickCenter.github.io/docs/)
+## Highlights In This Fork
+
+- Modernized build chain:
+  `pnpm workspace`, multi-entry `Vite`, `tsup` for Electron main/preload, and cleanup of legacy Vue CLI build artifacts.
+- Safer Electron runtime:
+  internal pages now use bridge-based access with `contextIsolation: true` and `nodeIntegration: false`, while existing plugins still run through a compatibility preload.
+- Packaging alignment after the migration:
+  runtime path resolution, relative asset loading, feature-app CSP handling, and Lottie bundling have all been adjusted to match the new build pipeline.
+- User-facing polish:
+  local-start file selection and drag/drop polish, clearer app/plugin matching and result ordering, improved history/menu behavior, and Windows host-file integration under the new runtime.
+
+## Compatibility Boundaries
+
+- Repository development, CI, and release automation use `pnpm` only.
+- Runtime plugin installation is still npm-compatible through Rubick's plugin installer adapter.
+- Internal app pages now default to a stricter Electron security model.
+- Existing plugins can continue running through the compatibility preload, but new development should prefer the bridge APIs documented in [PLUGIN_RUNTIME.zh-CN.md](./PLUGIN_RUNTIME.zh-CN.md).
+
+## Downloads
+
+- [Fork releases](https://github.com/zhushui/rubick/releases)
+
+## Documentation
+
+- [Development Guide (zh-CN)](./DEVELOPMENT.zh-CN.md)
+- [Plugin Runtime Compatibility (zh-CN)](./PLUGIN_RUNTIME.zh-CN.md)
+- [Upstream Rubick docs](https://rubickCenter.github.io/docs/)
+- [Upstream project](https://github.com/rubickCenter/rubick)
+
+## Development
+
+```bash
+pnpm install
+pnpm dev
+pnpm build
+pnpm lint
+pnpm package:dir
+pnpm package
+```
+
+- Node baseline: `>=20`
+- Verified baseline in CI: Node `24`
+- `pnpm install` also ensures Electron binaries are available and rebuilds native dependencies for Electron.
+- `pnpm package:dir` is the smoke-package command used in CI before full releases.
 
 ## How To Use Rubick
-After installing rubick, you can quickly launch the main program by pressing the shortcut keys Alt/Option+R. Entering keywords in the main program input box can search for corresponding apps, plugins, files...
-Select the ones you want and use them.
 
-If you don't want the function, you can click the logo on the left to enter the plugin market and find the ones you want to install.
+After installing Rubick, press `Alt/Option + R` to open the main window quickly.
+You can search applications, plugins, files, and folders directly from the main input box.
 
-## Feature list
-- [x] Plugin management based on the npm package pattern, installing plugins is as simple as installing npm packages.
-- [x] Supports WebDAV for multi-device data synchronization, ensuring true data security synchronization.
-- [x] A unique system plugin mode that allows plugins to become an integral part of Rubick.
-- [x] Supports the quick launch of local apps, files, and folders.
-- [x] Supports enterprise-level intranet deployment.
-- [x] Supports multiple languages.
+If the built-in features are not enough, click the Rubick logo on the left to open the plugin market and install the plugins you need.
 
-##  Core functionality showcase.
-### 1. Search system application
-Support pinyin and abbreviations to search system applications：
+## Upstream Resources
 
-![](https://pic1.zhimg.com/80/v2-70c105ff7fb1e955fc67ffa5a5564092_720w.gif)
+This fork still benefits from the upstream plugin ecosystem and related resources:
 
-### 2. UI plug-in installation
-Click the `rubick` icon on the right side of the search box to enter the plug-in market, select the desired plug-in, and click the download button to download. After the download is complete, you can find the installed plug-in under the Installed tab
+- [Rubick plugin repositories](https://gitee.com/rubick-center)
+- [Rubick plugin database](https://gitcode.net/rubickcenter/rubick-database)
+- [Rubick Plugin CLI](https://github.com/rubickCenter/rubick-plugin-cli)
 
-After the installation is complete, enter the plug-in call up command to use the corresponding plug-in：
+## Feedback And Contribution
 
-![](https://pic1.zhimg.com/80/v2-5906bba20fe0a67f9e7a5a8c11341305_720w.gif)
-
-### 3. System plug-in installation
-The system plug-in installation method is the same as that of the UI category. In the plug-in market, select the `system category` and find the system plug-in that suits you to install it.
-```
-After the system plug-in is installed successfully, rubick needs to be restarted to take effect
-```
-
-### 4. Multi-device data synchronization based on WebDAV.
-In "Rubick," search for "Preferences," go to "Account and Settings," and then select "Multi-Device Data Synchronization." You can export and import data for the use of Rubick plugins.
-
-![](https://pic1.zhimg.com/80/v2-ff85793741e4dff82a729d3eb3d41551_720w.png)
-
-## Related Repositories
-
-[Rubick Plugins Repositories](https://gitee.com/rubick-center)
-
-[Rubick Plugins Database](https://gitcode.net/rubickcenter/rubick-database)
-
-[Rubick Plugin CLI](https://github.com/rubickCenter/rubick-plugin-cli)
-
-## Sponsor
-### 1. Join the Knowledge Planet
-We have accumulated a lot of knowledge and common issues about rubick on the Knowledge Planet. You can pay to join our knowledge community to discuss with us. We will answer at any time!
-
-<img width=400 src=https://picx.zhimg.com/80/v2-6deabf65175d18080439ef813102d18c_720w.png />
-
-### 2. Buy me a cup of coffee
-If the project is helpful to you, you can buy me a cup of coffee as a reward!
-<div align= "left">
-<img width="180" src="https://picx.zhimg.com/80/v2-911d249dc454f3460451a4e1ecceeb14_720w.png">
-<img width="180" src="https://picx.zhimg.com/80/v2-3160247d6099053405e6cd2cb6afb5e5_720w.png">
-</div>
-
-## 友情链接
-
-<a href="https://pro.kuaitu.cc/" target="_blank">
-<img width="100" src="https://github.com/user-attachments/assets/6127488e-466b-4e71-98ab-00fb3c76553e" />
-</a>
-
-
-## Feedback
-Those who are interested in this project or want to exchange and learn can scan the QR code and add the following WeChat, with the comment rubick, to help us grow better.
-
-![image](https://user-images.githubusercontent.com/21073039/127327603-9796f246-ee4b-4950-a69d-ce3205ec9569.png)
-
-<a href="https://hellogithub.com/repository/0a3e2484b44e481e9dcf1850e45193cd" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=0a3e2484b44e481e9dcf1850e45193cd&claim_uid=vXGwjpmYNsBex0C" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" /></a>
-
-## Contribute
-This project exists thanks to all the people who contribute. [[Contribute](https://github.com/rubickCenter/rubick/graphs/contributors)]. <a href="https://github.com/rubickCenter/rubick/graphs/contributors"><img src="https://opencollective.com/rubick/contributors.svg?width=890&button=false" /></a>
+- Please use this fork's [Issues](https://github.com/zhushui/rubick/issues) and Pull Requests for fork-specific bugs, maintenance requests, and improvements.
+- If an issue can be reproduced on upstream Rubick as well, it is still helpful to link or report it upstream.
+- Documentation, runtime compatibility fixes, packaging fixes, and test improvements are especially welcome.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/rubickCenter/rubick/blob/master/LICENSE) file for details.
+
+This project remains under the MIT License. See [LICENSE](./LICENSE) for details.

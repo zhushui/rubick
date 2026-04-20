@@ -1,7 +1,14 @@
 .DS_Store
 node_modules
-build/*
+.pnpm-store
+dist
+build
 !build/icons
+dist_electron
+public/feature
+public/tpl
+public/detach
+public/guide
 
 
 # local env files
@@ -13,6 +20,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.codex-dev-log.txt
 
 # Editor directories and files
 .idea
@@ -25,3 +33,6 @@ pnpm-debug.log*
 
 #Electron-builder output
 /dist_electron
+
+# 本地文档
+local-docs
