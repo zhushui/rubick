@@ -1,86 +1,183 @@
 {
   "name": "rubick",
-  "version": "4.3.8",
+  "version": "4.3.8-vite.1",
+  "description": "Maintained public Rubick fork with Vite/tsup modernization and safer plugin/runtime bridges.",
   "author": "muwoo <2424880409@qq.com>",
   "private": true,
-  "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint",
-    "feature:dev": "cd feature & npm run serve",
-    "electron:build": "vue-cli-service electron:build",
-    "electron:serve": "vue-cli-service electron:serve",
-    "release": "vue-cli-service electron:build",
-    "postinstall": "electron-builder install-app-deps",
-    "postuninstall": "electron-builder install-app-deps"
+  "homepage": "https://github.com/zhushui/rubick",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhushui/rubick.git"
   },
-  "main": "index.js",
+  "bugs": {
+    "url": "https://github.com/zhushui/rubick/issues"
+  },
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean": "rimraf dist build node_modules/.cache",
+    "dev": "cross-env NODE_ENV=development concurrently -k -n root,feature,tpl,detach,guide,main,preload,electron -c cyan,magenta,green,yellow,blue,white,gray,red \"pnpm dev:root\" \"pnpm --filter @rubick/feature dev\" \"pnpm --filter @rubick/tpl dev\" \"pnpm --filter @rubick/detach dev\" \"pnpm --filter @rubick/guide dev\" \"pnpm dev:main\" \"pnpm dev:preload\" \"pnpm dev:electron\"",
+    "dev:root": "vite --config vite.root.config.ts --host 127.0.0.1 --port 5173",
+    "dev:main": "tsup --config tsup.main.config.ts --watch",
+    "dev:preload": "tsup --config tsup.preload.config.ts --watch",
+    "dev:electron": "node scripts/ensure-electron.cjs && wait-on tcp:127.0.0.1:5173 tcp:127.0.0.1:5174 tcp:127.0.0.1:5175 tcp:127.0.0.1:5176 tcp:127.0.0.1:5177 dist/main/index.cjs dist/preload/main.cjs && electronmon dist/main/index.cjs",
+    "build": "cross-env NODE_ENV=production pnpm build:root && pnpm --filter @rubick/feature build && pnpm --filter @rubick/tpl build && pnpm --filter @rubick/detach build && pnpm --filter @rubick/guide build && pnpm build:main && pnpm build:preload",
+    "build:root": "vite build --config vite.root.config.ts",
+    "build:main": "tsup --config tsup.main.config.ts",
+    "build:preload": "tsup --config tsup.preload.config.ts",
+    "lint": "eslint . --ext .js,.ts,.vue --max-warnings=0",
+    "package:dir": "electron-builder --publish never --dir --config.win.signAndEditExecutable=false",
+    "package": "pnpm build && electron-builder",
+    "release": "pnpm package",
+    "postinstall": "node scripts/ensure-electron.cjs && electron-builder install-app-deps"
+  },
+  "main": "dist/main/index.cjs",
   "optionalDependencies": {
     "electron-clipboard-ex": "^1.3.3"
   },
   "dependencies": {
-    "@better-scroll/core": "^2.4.2",
-    "@electron/remote": "^2.0.10",
-    "ant-design-vue": "3.2.14",
-    "axios": "^1.3.4",
-    "core-js": "^3.6.5",
-    "cross-spawn": "^7.0.3",
-    "electron-updater": "^4.6.5",
+    "@better-scroll/core": "^2.5.1",
+    "@electron/remote": "^2.1.2",
+    "ant-design-vue": "3.2.20",
+    "axios": "^1.8.4",
+    "cross-spawn": "^7.0.6",
+    "electron-updater": "^6.6.2",
     "extract-file-icon": "^0.3.2",
-    "fix-path": "^3.0.0",
+    "fix-path": "^4.0.0",
+    "fs-extra": "^11.3.0",
     "get-mac-apps": "^1.0.2",
-    "got": "^11.8.3",
+    "got": "^14.4.6",
+    "koffi": "^2.16.1",
     "lodash.debounce": "^4.0.8",
     "memorystream": "^0.3.1",
     "node-key-sender": "^1.0.11",
-    "npm": "6.14.7",
-    "pinyin-match": "^1.2.4",
-    "pouchdb": "^7.2.2",
+    "npm": "10.9.4",
+    "pinia": "^2.3.1",
+    "pinyin-match": "^1.2.7",
+    "pouchdb": "^9.0.0",
     "pouchdb-load": "^1.4.6",
     "pouchdb-replication-stream": "^1.2.9",
-    "simple-plist": "0.2.1",
-    "uiohook-napi": "^1.5.4",
-    "vue": "^3.0.0",
-    "vue-router": "^4.0.0-0",
-    "vuex": "^4.0.0-0",
-    "webdav": "4.11.3",
-    "worker-loader": "^3.0.8"
+    "simple-plist": "^1.3.1",
+    "uiohook-napi": "^1.5.5",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.1",
+    "webdav": "^5.7.1"
   },
   "devDependencies": {
-    "@electron/asar": "^3.2.8",
-    "@ts-type/package-dts": "^1.0.53",
-    "@types/electron-devtools-installer": "^2.2.0",
-    "@typescript-eslint/eslint-plugin": "^4.18.0",
-    "@typescript-eslint/parser": "^4.18.0",
-    "@vue/cli-plugin-babel": "~4.5.0",
-    "@vue/cli-plugin-eslint": "~4.5.0",
-    "@vue/cli-plugin-router": "~4.5.0",
-    "@vue/cli-plugin-typescript": "~4.5.0",
-    "@vue/cli-plugin-vuex": "~4.5.0",
-    "@vue/cli-service": "~4.5.0",
-    "@vue/compiler-sfc": "^3.0.0",
-    "@vue/eslint-config-prettier": "^6.0.0",
-    "@vue/eslint-config-typescript": "^7.0.0",
-    "babel-plugin-import": "^1.13.3",
-    "compressing": "^1.10.0",
-    "electron": "26.0.0",
-    "electron-builder": "22.13.1",
-    "electron-devtools-installer": "^3.1.0",
-    "eslint": "^6.7.2",
-    "eslint-plugin-prettier": "^3.3.1",
-    "eslint-plugin-vue": "^7.0.0",
-    "less": "^3.0.4",
-    "less-loader": "^5.0.0",
-    "prettier": "^2.8.4",
-    "typescript": "~4.1.5",
-    "vue-cli-plugin-electron-builder": "3.0.0-alpha.4",
-    "worker-plugin": "^5.0.1"
+    "@types/fs-extra": "^11.0.4",
+    "@types/lodash.debounce": "^4.0.9",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.30.1",
+    "@typescript-eslint/parser": "^8.30.1",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.12",
+    "electronmon": "^2.0.2",
+    "eslint": "^8.57.1",
+    "eslint-plugin-prettier": "^5.2.6",
+    "eslint-plugin-vue": "^9.33.0",
+    "less": "^4.2.2",
+    "prettier": "^3.5.3",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.4",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vue-tsc": "^2.2.10",
+    "wait-on": "^8.0.3"
   },
-  "resolutions": {
-    "vue-cli-plugin-electron-builder/electron-builder": "^23.0.3",
-    "leveldown": "6.0.3"
-  },
-  "volta": {
-    "node": "16.20.2"
+  "build": {
+    "productName": "rubick",
+    "appId": "com.muwoo.rubick",
+    "compression": "maximum",
+    "directories": {
+      "output": "build"
+    },
+    "releaseInfo": {
+      "releaseName": "normal",
+      "releaseNotesFile": "./release/releaseNotes.md"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zhushui",
+        "repo": "rubick"
+      }
+    ],
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "dmg": {
+      "contents": [
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 150,
+          "type": "file"
+        }
+      ]
+    },
+    "mac": {
+      "icon": "public/icons/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "rubick-${version}-${arch}.dmg",
+      "gatekeeperAssess": false,
+      "entitlementsInherit": "./release/entitlements.mac.plist",
+      "entitlements": "./release/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "category": "public.app-category.developer-tools",
+      "extendInfo": {
+        "LSUIElement": 1
+      }
+    },
+    "win": {
+      "icon": "public/icons/icon.ico",
+      "artifactName": "rubick-Setup-${version}-${arch}.exe",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "shortcutName": "rubick",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "public/installer.nsh"
+    },
+    "linux": {
+      "icon": "public/icons/",
+      "publish": [
+        "github"
+      ],
+      "target": "deb"
+    }
   }
 }

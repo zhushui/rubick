@@ -94,15 +94,17 @@
           : 'more'
       "
     >
-      <keep-alive>
-        <router-view />
-      </keep-alive>
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   StarOutlined,
@@ -117,19 +119,34 @@ import {
   ApiOutlined,
 } from '@ant-design/icons-vue';
 import { useStore } from 'vuex';
-import localConfig from '@/confOp';
+import localConfig, { LOCAL_CONFIG_CHANGE_EVENT } from '@/confOp';
 
 const store = useStore();
 const router = useRouter();
 const active = computed(() => store.state.active);
-const { perf } = localConfig.getConfig();
+const config = ref(localConfig.getConfig());
+const perf = computed(() => config.value.perf);
+
+const refreshConfig = (event?: Event) => {
+  const nextConfig = (event as CustomEvent | undefined)?.detail;
+  config.value = nextConfig || localConfig.getConfig();
+};
 
 const changeMenu = (key: any) => {
   store.commit('commonUpdate', { active: [key] });
   router.push(key);
 };
 
-window.rubick.onPluginEnter(({ code }: { code: string }) => {
+onMounted(() => {
+  window.addEventListener(LOCAL_CONFIG_CHANGE_EVENT, refreshConfig as any);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(LOCAL_CONFIG_CHANGE_EVENT, refreshConfig as any);
+});
+
+window.rubick.onPluginEnter((payload?: { code?: string }) => {
+  let code = payload?.code || 'finder';
   code = code === '已安装插件' ? 'installed' : code;
   changeMenu(code);
   store.commit('commonUpdate', { active: [code] });
@@ -147,8 +164,9 @@ window.rubick.setSubInput((e: any) => {
       'system',
     ].includes(active.value[0])
   ) {
-    if (e.text) {
-      store.commit('setSearchValue', e.text);
+    const text = e?.text || '';
+    if (text) {
+      store.commit('setSearchValue', text);
       router.push('result');
     } else {
       store.commit('commonUpdate', { active: ['finder'] });
@@ -187,9 +205,47 @@ init();
     }
   }
 }
+
+#app,
+#app * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+#app input,
+#app textarea,
+#app [contenteditable='true'],
+#app [contenteditable='plaintext-only'],
+#app .ant-input,
+#app .ant-input *,
+#app .ant-input-affix-wrapper input,
+#app .ant-input-affix-wrapper textarea,
+#app .ant-input-password input,
+#app .ant-select-selection-search-input {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+#app button,
+#app a,
+#app .ant-btn,
+#app .ant-btn *,
+#app .ant-dropdown-trigger,
+#app .ant-dropdown-trigger *,
+#app .ant-select-selector,
+#app .ant-select-selector *,
+#app .ant-input-prefix,
+#app .ant-input-prefix *,
+#app .ant-input-suffix,
+#app .ant-input-suffix *,
+#app .ant-input-password-icon,
+#app .anticon {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
 </style>
 <style lang="less" scoped>
-@import '~@/assets/common.less';
+@import '@/assets/common.less';
 * {
   margin: 0;
   padding: 0;

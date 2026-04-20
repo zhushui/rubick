@@ -101,6 +101,9 @@ export default {
         },
         localstart: {
           title: 'Local Start',
+          dropHint: 'Drag files or folders here, or click to add startup items',
+          remove: 'Remove',
+          missing: 'Missing',
         },
         database: {
           title: 'Data Synchronization',

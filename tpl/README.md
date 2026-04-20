@@ -1,24 +1,26 @@
-# tpl
+# @rubick/tpl
 
-## Project setup
-```
-npm install
-```
+`tpl` is one of Rubick's standalone Vite applications and is used for template and document related pages.
 
-### Compiles and hot-reloads for development
-```
-npm run serve
-```
+## From the workspace root
 
-### Compiles and minifies for production
-```
-npm run build
+```bash
+pnpm install
+pnpm --filter @rubick/tpl dev
+pnpm --filter @rubick/tpl build
+pnpm --filter @rubick/tpl preview
 ```
 
-### Lints and fixes files
-```
-npm run lint
+## From this directory
+
+```bash
+pnpm dev
+pnpm build
+pnpm preview
 ```
 
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+- Dev port: `5175`
+- Preview port: `4175`
+- Build output: `../dist/apps/tpl`
+
+See [../DEVELOPMENT.zh-CN.md](../DEVELOPMENT.zh-CN.md) for the full workspace development flow.

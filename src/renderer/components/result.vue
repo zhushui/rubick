@@ -1,18 +1,10 @@
 <template>
-  <div v-show="!currentPlugin.name" class="options">
-    <div
-      class="history-plugins"
-      v-if="
-        !options.length &&
-        !searchValue &&
-        !clipboardFile.length &&
-        config.perf.common.history
-      "
-    >
+  <div ref="optionsContainer" v-show="!currentPlugin.name" class="options">
+    <div class="history-plugins" v-if="showHistory">
       <a-row>
         <a-col
           @click="() => openPlugin(item)"
-          @contextmenu.prevent="openMenu($event,item)"
+          @contextmenu.prevent="openMenu($event, item)"
           :class="
             currentSelect === index ? 'active history-item' : 'history-item'
           "
@@ -20,15 +12,34 @@
           v-for="(item, index) in pluginHistory"
           :key="index"
         >
-          <a-avatar style="width: 28px; height: 28px" :src="item.icon" />
+          <a-avatar
+            style="width: 28px; height: 28px"
+            :src="getItemIcon(item)"
+          />
           <div class="name ellpise">
-            {{ item.cmd || item.pluginName || item._name || item.name }}
+            {{ item.cmd || item.displayName || item.pluginName || item._name || item.name }}
           </div>
           <div class="badge" v-if="item.pin"></div>
         </a-col>
       </a-row>
     </div>
-    <a-list v-else item-layout="horizontal" :dataSource="sort(options)">
+    <div v-else-if="showEmptyState" class="empty-state">
+      <div class="empty-state-row">
+        <div class="empty-state-icon-wrap">
+          <img class="empty-state-icon" :src="emptyStateIcon" />
+        </div>
+        <div class="empty-state-copy">
+          <div class="empty-state-title">没有找到匹配项</div>
+          <div class="empty-state-desc">
+            <span class="empty-state-query">{{ displaySearchValue }}</span>
+            <span class="empty-state-hint">
+              试试拼音、英文名、应用全称，或更短一点的关键词
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <a-list v-else item-layout="horizontal" :dataSource="sortedOptions">
       <template #renderItem="{ item, index }">
         <a-list-item
           @click="() => item.click()"
@@ -39,7 +50,7 @@
               <span v-html="renderTitle(item.name, item.match)"></span>
             </template>
             <template #avatar>
-              <a-avatar style="border-radius: 0" :src="item.icon" />
+              <a-avatar style="border-radius: 0" :src="getItemIcon(item)" />
             </template>
           </a-list-item-meta>
         </a-list-item>
@@ -49,13 +60,9 @@
 </template>
 
 <script lang="ts" setup>
-import { defineEmits, defineProps, reactive, ref, toRaw, watch } from 'vue';
-import localConfig from '../confOp';
-
-const path = window.require('path');
-const remote = window.require('@electron/remote');
-
-declare const __static: string;
+import { computed, nextTick, reactive, ref, toRaw, watch } from 'vue';
+import localConfig, { resolveRendererImage } from '../confOp';
+import fileIcon from '../assets/file.png';
 
 const config: any = ref(localConfig.getConfig());
 
@@ -72,12 +79,57 @@ const props: any = defineProps({
     type: Number,
     default: 0,
   },
-  currentPlugin: {},
-  pluginHistory: (() => [])(),
-  clipboardFile: (() => [])(),
+  currentPlugin: {
+    type: Object,
+    default: () => ({}),
+  },
+  pluginHistory: {
+    type: Array,
+    default: () => [],
+  },
+  clipboardFile: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['choosePlugin', 'setPluginHistory']);
+const optionsContainer = ref<HTMLElement | null>(null);
+
+const getHistoryKey = (item) =>
+  item.historyKey ||
+  [
+    item.pluginType || 'plugin',
+    item.originName || item.name || '',
+    item.feature?.code || '',
+    item.cmd || item.displayName || item.desc || '',
+  ]
+    .filter(Boolean)
+    .join(':');
+
+const emptyStateIcon = computed(() =>
+  resolveRendererImage(config.value.perf.custom.logo, fileIcon)
+);
+
+const displaySearchValue = computed(() =>
+  String(props.searchValue ?? '').trim()
+);
+
+const showHistory = computed(
+  () =>
+    !props.options.length &&
+    !props.searchValue &&
+    !props.clipboardFile.length &&
+    config.value.perf.common.history
+);
+
+const showEmptyState = computed(
+  () =>
+    !showHistory.value &&
+    String(props.searchValue ?? '').trim().length > 0 &&
+    !props.options.length &&
+    !props.clipboardFile.length
+);
 
 const renderTitle = (title, match) => {
   if (typeof title !== 'string') return;
@@ -103,83 +155,94 @@ const renderDesc = (desc = '') => {
 };
 
 const sort = (options) => {
-  for (let i = 0; i < options.length; i++) {
-    for (let j = i + 1; j < options.length; j++) {
-      if (options[j].zIndex > options[i].zIndex) {
-        let temp = options[i];
-        options[i] = options[j];
-        options[j] = temp;
+  return [...options]
+    .sort((prev, next) => {
+      const scoreDiff = (next?.zIndex || 0) - (prev?.zIndex || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
       }
-    }
-  }
-  return options.slice(0, 20);
+
+      const prevName = String(prev?.name || '');
+      const nextName = String(next?.name || '');
+      if (prevName.length !== nextName.length) {
+        return prevName.length - nextName.length;
+      }
+
+      return prevName.localeCompare(nextName, 'zh-CN');
+    })
+    .slice(0, 20);
 };
+
+const sortedOptions = computed(() => sort(props.options));
+
+watch(
+  [() => props.currentSelect, sortedOptions, showHistory],
+  async () => {
+    await nextTick();
+
+    const activeElement =
+      optionsContainer.value?.querySelector<HTMLElement>('.active');
+
+    activeElement?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  },
+  {
+    flush: 'post',
+  }
+);
 
 const openPlugin = (item) => {
   emit('choosePlugin', item);
 };
 
+const getItemIcon = (item) => {
+  const fallbackIcon =
+    item?.pluginType === 'app' ? fileIcon : config.value.perf.custom.logo;
+  return resolveRendererImage(item?.icon || item?.logo, fallbackIcon);
+};
+
 const menuState: any = reactive({
   plugin: null,
 });
-let mainMenus;
+
+window.rubick.internal.onHistoryMenuAction(({ action }) => {
+  if (!menuState.plugin) return;
+  if (action === 'remove') {
+    const history = props.pluginHistory.filter(
+      (item) => getHistoryKey(item) !== getHistoryKey(menuState.plugin)
+    );
+    emit('setPluginHistory', toRaw(history));
+  }
+  if (action === 'pin') {
+    const history = props.pluginHistory.map((item) => {
+      if (getHistoryKey(item) === getHistoryKey(menuState.plugin)) {
+        item.pin = true;
+      }
+      return item;
+    });
+    emit('setPluginHistory', toRaw(history));
+  }
+  if (action === 'unpin') {
+    const history = props.pluginHistory.map((item) => {
+      if (getHistoryKey(item) === getHistoryKey(menuState.plugin)) {
+        item.pin = false;
+      }
+      return item;
+    });
+    emit('setPluginHistory', toRaw(history));
+  }
+});
 
 const openMenu = (e, item) => {
-  const pinToMain = mainMenus.getMenuItemById('pinToMain');
-  const unpinFromMain = mainMenus.getMenuItemById('unpinFromMain');
-  pinToMain.visible = !item.pin;
-  unpinFromMain.visible = item.pin;
-  mainMenus.popup({
+  menuState.plugin = item;
+  window.rubick.internal.popupHistoryMenu({
+    pinned: item.pin,
     x: e.pageX,
     y: e.pageY,
   });
-  menuState.plugin = item;
 };
-
-const initMainCmdMenus = () => {
-  const menu = [
-    {
-      id: 'removeRecentCmd',
-      label: '从"使用记录"中删除',
-      icon: path.join(__static, 'icons', 'delete@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.filter((item) => item.name !== menuState.plugin.name);
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-    {
-      id: 'pinToMain',
-      label: '固定到"搜索面板"',
-      icon: path.join(__static, 'icons', 'pin@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.map((item) => {
-          if (item.name === menuState.plugin.name) {
-            item.pin = true;
-          }
-          return item;
-        });
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-    {
-      id: 'unpinFromMain',
-      label: '从"搜索面板"取消固定',
-      icon: path.join(__static, 'icons', 'unpin@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.map((item) => {
-          if (item.name === menuState.plugin.name) {
-            item.pin = false;
-          }
-          return item;
-        });
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-  ];
-  mainMenus = remote.Menu.buildFromTemplate(menu);
-};
-
-initMainCmdMenus();
 </script>
 
 <style lang="less">
@@ -189,20 +252,6 @@ initMainCmdMenus();
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
-}
-
-.contextmenu {
-  margin: 0;
-  background: #fff;
-  z-index: 3000;
-  position: absolute;
-  list-style-type: none;
-  padding: 5px 0;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: #333;
-  box-shadow: 2px 2px 3px 0 rgba(0, 0, 0, 0.3);
 }
 
 .options {
@@ -250,6 +299,67 @@ initMainCmdMenus();
       margin-top: 4px;
       width: 100%;
       text-align: center;
+    }
+  }
+  .empty-state {
+    min-height: 84px;
+    padding: 0;
+    box-sizing: border-box;
+    border-top: 1px dashed var(--color-border-light);
+    display: flex;
+    align-items: center;
+    color: var(--color-text-desc);
+    .empty-state-row {
+      width: 100%;
+      min-width: 0;
+      min-height: 84px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--color-body-bg);
+      border-bottom: 1px solid var(--color-border-light);
+    }
+    .empty-state-icon-wrap {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--color-list-hover);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .empty-state-icon {
+      width: 20px;
+      height: 20px;
+      opacity: 0.82;
+    }
+    .empty-state-copy {
+      min-width: 0;
+      flex: 1;
+    }
+    .empty-state-title {
+      font-size: 14px;
+      line-height: 1.4;
+      margin-bottom: 4px;
+      color: var(--color-text-primary);
+      min-width: 0;
+    }
+    .empty-state-query {
+      color: var(--ant-primary-color);
+      margin-right: 6px;
+    }
+    .empty-state-desc {
+      font-size: 12px;
+      line-height: 1.5;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .empty-state-hint {
+      color: var(--color-text-desc);
     }
   }
   .op-item {

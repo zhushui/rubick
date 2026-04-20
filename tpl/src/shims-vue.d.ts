@@ -7,4 +7,9 @@ declare module '*.vue' {
 
 interface Window {
   rubick: any;
+  tplBridge: {
+    onChangeCurrent: (cb: (delta: number) => void) => () => void;
+    send: (channel: string, payload: unknown) => void;
+  };
+  exports: Record<string, any>;
 }

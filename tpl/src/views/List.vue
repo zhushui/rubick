@@ -17,9 +17,8 @@
   </div>
 </template>
 <script setup lang="ts">
-import { useRoute } from "vue-router";
-import { ref, onBeforeUnmount, watch } from "vue";
-const { ipcRenderer } = window.require("electron");
+import { useRoute } from 'vue-router';
+import { ref, onBeforeUnmount, watch } from 'vue';
 
 const route = useRoute();
 
@@ -33,7 +32,10 @@ window.rubick.setExpendHeight(defaultHeight);
 
 const lists = ref([]);
 watch([lists], () => {
-  const height = lists.value.length > itemMaxNum ? itemMaxNum * itemHeight : itemHeight * lists.value.length
+  const height =
+    lists.value.length > itemMaxNum
+      ? itemMaxNum * itemHeight
+      : itemHeight * lists.value.length;
   window.rubick.setExpendHeight(defaultHeight + height);
 });
 current.args.enter &&
@@ -42,10 +44,10 @@ current.args.enter &&
   });
 
 const currentSelect = ref(0);
-ipcRenderer.on(`changeCurrent`, (e, result) => {
+const stopChangeCurrent = window.tplBridge.onChangeCurrent((result) => {
   if (
     currentSelect.value + result > lists.value.length - 1 ||
-    lists.value + result < 0
+    currentSelect.value + result < 0
   ) {
     return;
   }
@@ -53,24 +55,25 @@ ipcRenderer.on(`changeCurrent`, (e, result) => {
 });
 window.rubick.setSubInput(({ text }) => {
   current.args.search &&
-    current.args.search({ code, type: "", payload: [] }, text, (result) => {
+    current.args.search({ code, type: '', payload: [] }, text, (result) => {
       lists.value = result || [];
     });
-}, "搜索");
+}, '搜索');
 
 const select = (item) => {
-  current.args.select && current.args.select({code, type: '', payload: [] }, item);
+  current.args.select &&
+    current.args.select({ code, type: '', payload: [] }, item);
 };
 
 const onKeydownAction = (e) => {
-  if (e.code === "Enter") {
+  if (e.code === 'Enter') {
     return select(lists.value[currentSelect.value]);
   }
   let index = 0;
-  if (e.code === "ArrowDown") {
+  if (e.code === 'ArrowDown') {
     index = 1;
   }
-  if (e.code === "ArrowUp") {
+  if (e.code === 'ArrowUp') {
     index = -1;
   }
   if (!lists.value.length) return;
@@ -82,12 +85,12 @@ const onKeydownAction = (e) => {
   currentSelect.value = currentSelect.value + index;
 };
 
-window.addEventListener("keydown", onKeydownAction);
+window.addEventListener('keydown', onKeydownAction);
 
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onKeydownAction);
+  stopChangeCurrent();
+  window.removeEventListener('keydown', onKeydownAction);
 });
-
 </script>
 <style>
 .options {

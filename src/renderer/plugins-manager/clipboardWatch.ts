@@ -1,55 +1,76 @@
-import getCopyFiles from '@/common/utils/getCopyFiles';
-import { clipboard, nativeImage, ipcRenderer } from 'electron';
-import { getGlobal } from '@electron/remote';
-import path from 'path';
 import pluginClickEvent from './pluginClickEvent';
 import localConfig from '../confOp';
 import { ref } from 'vue';
+import linkIcon from '../assets/link.png';
+
+const getExtname = (targetPath: string) => {
+  const match = /(\.[^./\\]+)$/.exec(targetPath);
+  return match ? match[1] : '';
+};
 
 export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
   const clipboardFile: any = ref([]);
+
+  const getLocalPlugins = () => window.rubick.internal.getLocalPlugins();
+
+  const hydrateClipboardIcons = async (fileList) => {
+    const nextFiles = await Promise.all(
+      fileList.map(async (file) => {
+        if (file?.dataUrl || !file?.path) {
+          return file;
+        }
+        try {
+          const dataUrl = await window.rubick.getFileIcon(file.path);
+          return {
+            ...file,
+            dataUrl,
+          };
+        } catch {
+          return file;
+        }
+      })
+    );
+    clipboardFile.value = nextFiles;
+  };
+
   const searchFocus = (files, strict = true) => {
     const config: any = localConfig.getConfig();
-    // 未开启自动粘贴
     if (!config.perf.common.autoPast && strict) return;
-
     if (currentPlugin.value.name) return;
-    const fileList = files || getCopyFiles();
-    // 拷贝的是文件
-    if (fileList) {
+
+    const fileList = files || window.rubick.getCopyedFiles();
+    if (fileList && fileList.length) {
       window.setSubInputValue({ value: '' });
       clipboardFile.value = fileList;
-      const localPlugins = getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+      void hydrateClipboardIcons(fileList);
+      const localPlugins = getLocalPlugins();
       const options: any = [
         {
           name: '复制路径',
           value: 'plugin',
-          icon: require('../assets/link.png'),
-          desc: '复制路径到剪切板',
+          icon: linkIcon,
+          desc: '复制路径到剪贴板',
           click: () => {
-            clipboard.writeText(fileList.map((file) => file.path).join(','));
-            ipcRenderer.send('msg-trigger', { type: 'hideMainWindow' });
+            window.rubick.copyText(fileList.map((file) => file.path).join(','));
+            window.rubick.hideMainWindow();
           },
         },
       ];
-      // 判断复制的文件类型是否一直
+
       const commonLen = fileList.filter(
-        (file) => path.extname(fileList[0].path) === path.extname(file.path)
+        (file) => getExtname(fileList[0].path) === getExtname(file.path)
       ).length;
-      // 复制路径
       if (commonLen !== fileList.length) {
         setOptionsRef(options);
         return;
       }
 
-      // 再正则插件
       if (fileList.length === 1) {
         localPlugins.forEach((plugin) => {
           const feature = plugin.features;
-          // 系统插件无 features 的情况，不需要再搜索
           if (!feature) return;
           feature.forEach((fe) => {
-            const ext = path.extname(fileList[0].path);
+            const ext = getExtname(fileList[0].path);
             fe.cmds.forEach((cmd) => {
               const regImg = /\.(png|jpg|gif|jpeg|webp)$/;
               if (
@@ -71,9 +92,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
                       ext: {
                         code: fe.code,
                         type: cmd.type || 'text',
-                        payload: nativeImage
-                          .createFromPath(fileList[0].path)
-                          .toDataURL(),
+                        payload: window.rubick.readFileAsDataUrl(fileList[0].path),
                       },
                       openPlugin,
                       option,
@@ -83,7 +102,6 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
                 };
                 options.push(option);
               }
-              // 如果是文件，且符合文件正则类型
               if (
                 fileList.length > 1 ||
                 (cmd.type === 'file' && new RegExp(cmd.match).test(ext))
@@ -117,18 +135,19 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
         });
       }
       setOptionsRef(options);
-      clipboard.clear();
+      window.rubick.clearClipboard();
       return;
     }
-    const clipboardType = clipboard.availableFormats();
+
+    const clipboardType = window.rubick.readClipboardFormats();
     if (!clipboardType.length) return;
-    if ('text/plain' === clipboardType[0]) {
-      const contentText = clipboard.readText();
+    if (clipboardType[0] === 'text/plain') {
+      const contentText = window.rubick.readClipboardText();
       if (contentText.trim()) {
         clearClipboardFile();
         window.setSubInputValue({ value: contentText });
       }
-      clipboard.clear();
+      window.rubick.clearClipboard();
     }
   };
 
@@ -136,11 +155,9 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
     clipboardFile.value = [];
     optionsRef.value = [];
   };
-  // 触发 ctrl + v 主动粘贴时
+
   const readClipboardContent = () => {
-    // read image
-    const img = clipboard.readImage();
-    const dataUrl = img.toDataURL();
+    const dataUrl = window.rubick.readClipboardImage();
     if (!dataUrl.replace('data:image/png;base64,', '')) return;
     clipboardFile.value = [
       {
@@ -150,12 +167,10 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
         dataUrl,
       },
     ];
-    const localPlugins = getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+    const localPlugins = getLocalPlugins();
     const options: any = [];
-    // 再正则插件
     localPlugins.forEach((plugin) => {
       const feature = plugin.features;
-      // 系统插件无 features 的情况，不需要再搜索
       if (!feature) return;
       feature.forEach((fe) => {
         fe.cmds.forEach((cmd) => {
@@ -186,9 +201,8 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
           }
         });
       });
-
-      setOptionsRef(options);
     });
+    setOptionsRef(options);
   };
 
   return {

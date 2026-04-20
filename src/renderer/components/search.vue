@@ -1,22 +1,22 @@
 <template>
   <div class="rubick-select">
     <div
-      :class="clipboardFile[0].name ? 'clipboard-tag' : 'clipboard-img'"
       v-if="!!clipboardFile.length"
+      :class="clipboardFile[0].name ? 'clipboard-tag' : 'clipboard-img'"
     >
       <img style="margin-right: 8px" :src="getIcon()" />
       <div class="ellipse">{{ clipboardFile[0].name }}</div>
-      <a-tag color="#aaa" v-if="clipboardFile.length > 1">
+      <a-tag v-if="clipboardFile.length > 1" color="#aaa">
         {{ clipboardFile.length }}
       </a-tag>
     </div>
     <div v-else :class="currentPlugin.cmd ? 'rubick-tag' : ''">
       <img
-        @click="() => emit('openMenu')"
         class="rubick-logo"
-        :src="currentPlugin.logo || config.perf.custom.logo"
+        :src="getCurrentPluginLogo()"
+        @click="() => emit('openMenu')"
       />
-      <div class="select-tag" v-show="currentPlugin.cmd">
+      <div v-show="currentPlugin.cmd" class="select-tag">
         {{ currentPlugin.cmd }}
       </div>
     </div>
@@ -24,26 +24,24 @@
       id="search"
       ref="mainInput"
       class="main-input"
-      @input="(e) => changeValue(e)"
-      @keydown.left="(e) => keydownEvent(e, 'left')"
-      @keydown.right="(e) => keydownEvent(e, 'right')"
-      @keydown.down="(e) => keydownEvent(e, 'down')"
-      @keydown.tab="(e) => keydownEvent(e, 'down')"
-      @keydown.up="(e) => keydownEvent(e, 'up')"
-      @keydown="(e) => checkNeedInit(e)"
+      :class="{ 'is-text-target': isTextTarget }"
       :value="searchValue"
       :placeholder="
         pluginLoading
           ? '更新检测中...'
           : placeholder || config.perf.custom.placeholder
       "
+      @input="(e) => changeValue(e)"
+      @keydown="(e) => handleKeydown(e)"
       @keypress.enter="(e) => keydownEvent(e, 'enter')"
       @keypress.space="(e) => keydownEvent(e, 'space')"
       @focus="emit('focus')"
+      @mousemove.capture="(e) => updateInputCursorState(e)"
+      @mouseleave="resetInputCursorState"
     >
       <template #suffix>
         <div class="suffix-tool">
-          <MoreOutlined @click="showSeparate()" class="icon-more" />
+          <MoreOutlined class="icon-more" @click="showSeparate()" />
         </div>
       </template>
     </a-input>
@@ -51,15 +49,19 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits, ref } from 'vue';
-import { ipcRenderer } from 'electron';
+import { ref } from 'vue';
 import { MoreOutlined } from '@ant-design/icons-vue';
+import localConfig, { resolveRendererImage } from '../confOp';
+import fileIcon from '../assets/file.png';
+import {
+  isPointerOverSearchText,
+  isSearchInputInteractiveElement,
+} from '../../common/utils/searchTextInteraction';
 
-const remote = window.require('@electron/remote');
-import localConfig from '../confOp';
-const { Menu } = remote;
+type Direction = 'up' | 'down' | 'left' | 'right';
 
 const config: any = ref(localConfig.getConfig());
+const isTextTarget = ref(false);
 
 const props: any = defineProps({
   searchValue: {
@@ -70,17 +72,23 @@ const props: any = defineProps({
     type: String,
     default: '',
   },
-  pluginHistory: (() => [])(),
-  currentPlugin: {},
-  pluginLoading: Boolean,
-  clipboardFile: (() => [])(),
+  pluginHistory: {
+    type: Array,
+    default: () => [],
+  },
+  currentPlugin: {
+    type: Object,
+    default: () => ({}),
+  },
+  pluginLoading: {
+    type: Boolean,
+    default: false,
+  },
+  clipboardFile: {
+    type: Array,
+    default: () => [],
+  },
 });
-
-const changeValue = (e) => {
-  // if (props.currentPlugin.name === 'rubick-system-feature') return;
-  targetSearch({ value: e.target.value });
-  emit('onSearch', e);
-};
 
 const emit = defineEmits([
   'onSearch',
@@ -94,7 +102,20 @@ const emit = defineEmits([
   'clearClipbord',
 ]);
 
-const keydownEvent = (e, key: string) => {
+const changeValue = (e) => {
+  targetSearch({ value: e.target.value });
+  emit('onSearch', e);
+  isTextTarget.value = false;
+};
+
+const canNavigateHistory = () =>
+  !props.currentPlugin.name &&
+  !String(props.searchValue ?? '').trim() &&
+  !!config.value.perf.common.history &&
+  !props.clipboardFile.length &&
+  !!props.pluginHistory.length;
+
+const keydownEvent = (e, key: Direction | 'enter' | 'space') => {
   key !== 'space' && e.preventDefault();
   const { ctrlKey, shiftKey, altKey, metaKey } = e;
   const modifiers: Array<string> = [];
@@ -102,28 +123,29 @@ const keydownEvent = (e, key: string) => {
   shiftKey && modifiers.push('shift');
   altKey && modifiers.push('alt');
   metaKey && modifiers.push('meta');
-  ipcRenderer.send('msg-trigger', {
-    type: 'sendPluginSomeKeyDownEvent',
-    data: {
+  window.rubick.internal.sendPluginSomeKeyDownEvent({
       keyCode: e.code,
       modifiers,
-    },
   });
   const runPluginDisable =
     (e.target.value === '' && !props.pluginHistory.length) ||
     props.currentPlugin.name;
   switch (key) {
     case 'up':
-      emit('changeCurrent', -1);
+      if (props.currentPlugin.name) return;
+      emit('changeCurrent', 'up');
       break;
     case 'down':
-      emit('changeCurrent', 1);
+      if (props.currentPlugin.name) return;
+      emit('changeCurrent', 'down');
       break;
     case 'left':
-      emit('changeCurrent', -1);
+      if (!canNavigateHistory()) return;
+      emit('changeCurrent', 'left');
       break;
     case 'right':
-      emit('changeCurrent', 1);
+      if (!canNavigateHistory()) return;
+      emit('changeCurrent', 'right');
       break;
     case 'enter':
       if (runPluginDisable) return;
@@ -145,17 +167,90 @@ const checkNeedInit = (e) => {
   if (e.target.value === '' && e.keyCode === 8) {
     closeTag();
   }
-  // 手动粘贴
   if ((ctrlKey || metaKey) && e.key === 'v') {
     emit('readClipboardContent');
   }
 };
 
+const handleKeydown = (e) => {
+  checkNeedInit(e);
+
+  switch (e.key) {
+    case 'ArrowLeft':
+      if (canNavigateHistory()) {
+        keydownEvent(e, 'left');
+      }
+      break;
+    case 'ArrowRight':
+      if (canNavigateHistory()) {
+        keydownEvent(e, 'right');
+      }
+      break;
+    case 'ArrowDown':
+      keydownEvent(e, 'down');
+      break;
+    case 'Tab':
+      keydownEvent(e, 'down');
+      break;
+    case 'ArrowUp':
+      keydownEvent(e, 'up');
+      break;
+    default:
+      break;
+  }
+};
+
+const updateInputCursorState = (e: MouseEvent) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (!target || isSearchInputInteractiveElement(target)) {
+    isTextTarget.value = false;
+    return;
+  }
+
+  isTextTarget.value = isPointerOverSearchText(e, target);
+};
+
+const resetInputCursorState = () => {
+  isTextTarget.value = false;
+};
+
+const getCurrentPluginMenuInfo = () => {
+  if (!props.currentPlugin?.name) {
+    return null;
+  }
+
+  const features = Array.isArray(props.currentPlugin.features)
+    ? props.currentPlugin.features
+        .map((feature) => ({
+          code: feature?.code || '',
+          label:
+            feature?.explain ||
+            feature?.cmd ||
+            feature?.name ||
+            (Array.isArray(feature?.cmds)
+              ? feature.cmds.filter(Boolean).join(' / ')
+              : '') ||
+            feature?.code ||
+            '',
+        }))
+        .filter((feature) => feature.label)
+    : [];
+
+  return {
+    pluginName:
+      props.currentPlugin.pluginName ||
+      props.currentPlugin.displayName ||
+      props.currentPlugin.name ||
+      '',
+    description: props.currentPlugin.description || props.currentPlugin.desc || '',
+    features,
+  };
+};
+
 const targetSearch = ({ value }) => {
   if (props.currentPlugin.name) {
-    return ipcRenderer.sendSync('msg-trigger', {
-      type: 'sendSubInputChangeEvent',
-      data: { text: value },
+    return window.rubick.internal.sendSubInputChangeEvent({
+      text: value,
     });
   }
 };
@@ -163,109 +258,70 @@ const targetSearch = ({ value }) => {
 const closeTag = () => {
   emit('changeSelect', {});
   emit('clearClipbord');
-  ipcRenderer.send('msg-trigger', {
-    type: 'removePlugin',
+  window.rubick.removePlugin();
+};
+
+window.rubick.internal.onMainMenuAction(({ action, value }) => {
+  if (action === 'toggle-hide-on-blur') {
+    changeHideOnBlur();
+  }
+  if (action === 'change-lang') {
+    changeLang(value);
+  }
+  if (action === 'open-plugin-devtools') {
+    window.rubick.internal.openPluginDevTools();
+  }
+  if (action === 'detach-plugin') {
+    newWindow();
+  }
+});
+
+const showSeparate = () => {
+  const plugin = getCurrentPluginMenuInfo();
+  window.rubick.internal.popupMainMenu({
+    hideOnBlur: config.value.perf.common.hideOnBlur,
+    lang: config.value.perf.common.lang,
+    hasPlugin: !!plugin,
+    plugin,
   });
 };
 
-const showSeparate = () => {
-  let pluginMenu: any = [
-    {
-      label: config.value.perf.common.hideOnBlur ? '钉住' : '自动隐藏',
-      click: changeHideOnBlur,
-    },
-    {
-      label:
-        config.value.perf.common.lang === 'zh-CN'
-          ? '切换语言'
-          : 'Change Language',
-      submenu: [
-        {
-          label: '简体中文',
-          click: () => {
-            changeLang('zh-CN');
-          },
-        },
-        {
-          label: 'English',
-          click: () => {
-            changeLang('en-US');
-          },
-        },
-      ],
-    },
-  ];
-  if (props.currentPlugin && props.currentPlugin.logo) {
-    pluginMenu = pluginMenu.concat([
-      {
-        label: '开发者工具',
-        click: () => {
-          ipcRenderer.send('msg-trigger', { type: 'openPluginDevTools' });
-          // todo
-        },
-      },
-      {
-        label: '当前插件信息',
-        submenu: [
-          {
-            label: '简介',
-          },
-          {
-            label: '功能',
-          },
-        ],
-      },
-      {
-        label: '分离窗口',
-        click: newWindow,
-      },
-    ]);
-  }
-  let menu = Menu.buildFromTemplate(pluginMenu);
-  menu.popup();
-};
-
 const changeLang = (lang) => {
-  let cfg = { ...config.value };
+  const cfg = { ...config.value };
   cfg.perf.common.lang = lang;
   localConfig.setConfig(JSON.parse(JSON.stringify(cfg)));
   config.value = cfg;
 };
 
 const changeHideOnBlur = () => {
-  let cfg = { ...config.value };
+  const cfg = { ...config.value };
   cfg.perf.common.hideOnBlur = !cfg.perf.common.hideOnBlur;
   localConfig.setConfig(JSON.parse(JSON.stringify(cfg)));
   config.value = cfg;
 };
 
 const getIcon = () => {
-  if (props.clipboardFile[0].dataUrl) return props.clipboardFile[0].dataUrl;
-  try {
-    return ipcRenderer.sendSync('msg-trigger', {
-      type: 'getFileIcon',
-      data: { path: props.clipboardFile[0].path },
-    });
-  } catch (e) {
-    return require('../assets/file.png');
-  }
+  return props.clipboardFile[0].dataUrl || fileIcon;
 };
 
+const getCurrentPluginLogo = () =>
+  resolveRendererImage(
+    props.currentPlugin.icon || props.currentPlugin.logo,
+    config.value.perf.custom.logo
+  );
+
 const newWindow = () => {
-  ipcRenderer.send('msg-trigger', {
-    type: 'detachPlugin',
-  });
-  // todo
+  window.rubick.internal.detachPlugin();
 };
 
 const mainInput = ref(null);
-window.rubick.hooks.onShow = () => {
+window.rubick.onShow(() => {
   (mainInput.value as unknown as HTMLDivElement).focus();
-};
+});
 
-window.rubick.hooks.onHide = () => {
+window.rubick.onHide(() => {
   emit('clearSearchValue');
-};
+});
 </script>
 
 <style lang="less">
@@ -279,8 +335,8 @@ window.rubick.hooks.onHide = () => {
   width: 100%;
   align-items: center;
   height: 60px;
-  display: flex;
-  align-items: center;
+  z-index: 100;
+  box-sizing: border-box;
   .ellipse {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -313,6 +369,7 @@ window.rubick.hooks.onHide = () => {
     box-shadow: none !important;
     background: var(--color-body-bg);
     padding-left: 8px;
+    cursor: default;
     .ant-select-selection,
     .ant-input,
     .ant-select-selection__rendered {
@@ -322,24 +379,28 @@ window.rubick.hooks.onHide = () => {
       border: none !important;
       background: var(--color-body-bg);
       color: var(--color-text-primary);
+      cursor: default;
+    }
+    .ant-input-affix-wrapper,
+    .ant-input-suffix,
+    .ant-input-prefix,
+    input,
+    textarea {
+      cursor: default;
+    }
+    &.is-text-target {
+      .ant-input,
+      .ant-input-affix-wrapper,
+      input,
+      textarea {
+        cursor: text;
+      }
     }
   }
 
   .rubick-logo {
     width: 32px;
     border-radius: 100%;
-  }
-  .icon-tool {
-    width: 40px;
-    height: 40px;
-    background: #574778;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 100%;
-    img {
-      width: 32px;
-    }
   }
   .icon-tool {
     background: var(--color-input-hover);
@@ -351,25 +412,12 @@ window.rubick.hooks.onHide = () => {
   .suffix-tool {
     display: flex;
     align-items: center;
+    cursor: default;
     .icon-more {
       font-size: 26px;
       font-weight: bold;
       cursor: pointer;
       color: var(--color-text-content);
-    }
-    .loading {
-      color: var(--ant-primary-color);
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-    .update-tips {
-      position: absolute;
-      right: 46px;
-      top: 50%;
-      font-size: 14px;
-      transform: translateY(-50%);
-      color: #aaa;
     }
   }
   .clipboard-tag {

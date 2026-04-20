@@ -1,23 +1,23 @@
-import { app, BrowserWindow, protocol, nativeTheme } from 'electron';
-import path from 'path';
-import { createProtocol } from 'vue-cli-plugin-electron-builder/lib';
-// import versonHandler from '../common/versionHandler';
+import { BrowserWindow, nativeTheme } from 'electron';
 import localConfig from '@/main/common/initLocalConfig';
 import {
   WINDOW_HEIGHT,
   WINDOW_MIN_HEIGHT,
   WINDOW_WIDTH,
 } from '@/common/constans/common';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-require('@electron/remote/main').initialize();
+import {
+  getPreloadPath,
+  getRendererEntry,
+} from '@/main/common/runtimePaths';
+import executeJavaScriptSafely from '@/main/common/executeJavaScriptSafely';
+import commonConst from '@/common/utils/commonConst';
+import { hasManagedView } from '@/main/common/managedView';
 
 export default () => {
-  let win: any;
+  let win: BrowserWindow | undefined;
 
   const init = () => {
     createWindow();
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require('@electron/remote/main').enable(win.webContents);
   };
 
   const createWindow = async () => {
@@ -28,62 +28,72 @@ export default () => {
       resizable: true,
       width: WINDOW_WIDTH,
       frame: false,
-      title: '拉比克',
+      title: 'rubick',
       show: false,
       skipTaskbar: true,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c28' : '#fff',
       webPreferences: {
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
-        contextIsolation: false,
-        webviewTag: true,
-        nodeIntegration: true,
-        preload: path.join(__static, 'preload.js'),
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: getPreloadPath('main'),
         spellcheck: false,
       },
     });
-    if (process.env.WEBPACK_DEV_SERVER_URL) {
-      // Load the url of the dev server if in development mode
-      win.loadURL(process.env.WEBPACK_DEV_SERVER_URL as string);
-    } else {
-      createProtocol('app');
-      // Load the index.html when not in development
-      win.loadURL('app://./index.html');
+    win.setMaxListeners(30);
+
+    if (commonConst.dev()) {
+      win.webContents.on(
+        'did-fail-load',
+        (_event, errorCode, errorDescription, validatedURL) => {
+          console.error(
+            `[main-renderer:load-fail] ${errorCode} ${errorDescription} ${validatedURL}`
+          );
+        }
+      );
+      win.webContents.on(
+        'render-process-gone',
+        (_event, details) => {
+          console.error('[main-renderer:gone]', details);
+        }
+      );
     }
-    protocol.interceptFileProtocol('image', (req, callback) => {
-      const url = req.url.substr(8);
-      callback(decodeURI(url));
-    });
+
+    await win.loadURL(getRendererEntry());
+
     win.on('closed', () => {
       win = undefined;
     });
 
     win.on('show', () => {
-      // 触发主窗口的 onShow hook
-      win.webContents.executeJavaScript(
-        `window.rubick && window.rubick.hooks && typeof window.rubick.hooks.onShow === "function" && window.rubick.hooks.onShow()`
+      executeJavaScriptSafely(
+        win?.webContents,
+        `window.rubick?.__dispatchHook?.('Show')`
       );
-      // versonHandler.checkUpdate();
-      // win.webContents.openDevTools();
     });
 
     win.on('hide', () => {
-      // 触发主窗口的 onHide hook
-      win.webContents.executeJavaScript(
-        `window.rubick && window.rubick.hooks && typeof window.rubick.hooks.onHide === "function" && window.rubick.hooks.onHide()`
+      executeJavaScriptSafely(
+        win?.webContents,
+        `window.rubick?.__dispatchHook?.('Hide')`
       );
     });
 
-    // 判断失焦是否隐藏
     win.on('blur', async () => {
+      if (win && hasManagedView(win)) {
+        return;
+      }
+
       const config = await localConfig.getConfig();
       if (config.perf.common.hideOnBlur) {
-        win.hide();
+        win?.hide();
       }
     });
   };
 
-  const getWindow = () => win;
+  const getWindow = () => win as BrowserWindow;
 
   return {
     init,

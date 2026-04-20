@@ -54,7 +54,7 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/settings',
     name: 'settings',
-    component: () => import('../views/settings/user.vue'),
+    component: () => import('../views/settings/index.vue'),
   },
   {
     path: '/dev',

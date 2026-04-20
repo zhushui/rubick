@@ -1,16 +1,17 @@
 import path from 'path';
 import fs from 'fs';
 import getLocalDataFile from './getLocalDataFile';
-import defaultConfigForAnyPlatform from '../constans/defaultConfig';
+import { createDefaultConfig } from '../constans/defaultConfig';
 
 const configPath = path.join(getLocalDataFile(), './rubick-config.json');
 
 global.OP_CONFIG = {
   config: null,
   getDefaultConfig() {
-    return defaultConfigForAnyPlatform;
+    return createDefaultConfig();
   },
   get() {
+    const defaultConfigForAnyPlatform = createDefaultConfig();
     try {
       if (!global.OP_CONFIG.config) {
         global.OP_CONFIG.config = JSON.parse(
@@ -36,6 +37,9 @@ global.OP_CONFIG = {
     }
   },
   set(value) {
+    if (!global.OP_CONFIG.config) {
+      global.OP_CONFIG.config = createDefaultConfig();
+    }
     global.OP_CONFIG.config = {
       ...global.OP_CONFIG.config,
       ...value,

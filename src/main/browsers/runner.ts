@@ -1,5 +1,6 @@
-import { BrowserView, BrowserWindow, session } from 'electron';
+import { BrowserView, BrowserWindow, session, Session } from 'electron';
 import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import commonConst from '../../common/utils/commonConst';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import localConfig from '@/main/common/initLocalConfig';
@@ -8,29 +9,124 @@ import {
   WINDOW_PLUGIN_HEIGHT,
   WINDOW_WIDTH,
 } from '@/common/constans/common';
+import { getPreloadPath, getSubAppEntry } from '@/main/common/runtimePaths';
+import executeJavaScriptSafely from '@/main/common/executeJavaScriptSafely';
+import {
+  attachManagedView,
+  detachManagedView,
+  enableManagedViewAutoResize,
+  ManagedView,
+  setManagedViewBounds,
+} from '@/main/common/managedView';
 
-const getRelativePath = (indexPath) => {
-  return commonConst.windows()
-    ? indexPath.replace('file://', '')
-    : indexPath.replace('file:', '');
+const toFileSystemPath = (targetPath) => {
+  if (!targetPath || typeof targetPath !== 'string') {
+    return targetPath;
+  }
+
+  if (/^file:/i.test(targetPath)) {
+    return fileURLToPath(targetPath);
+  }
+
+  return targetPath;
 };
 
-const getPreloadPath = (plugin, pluginIndexPath) => {
+const isSecureInternalPlugin = (plugin) =>
+  plugin.name === 'rubick-system-feature' || !plugin.main;
+
+const canStayOnInternalEntry = (entryUrl: string, nextUrl: string) => {
+  if (!entryUrl || !nextUrl) {
+    return false;
+  }
+
+  try {
+    const current = new URL(entryUrl);
+    const target = new URL(nextUrl);
+
+    if (current.protocol !== target.protocol) {
+      return false;
+    }
+
+    if (current.protocol === 'http:' || current.protocol === 'https:') {
+      return current.origin === target.origin;
+    }
+
+    if (current.protocol === 'file:') {
+      return current.href.split('#')[0] === target.href.split('#')[0];
+    }
+  } catch {
+    return entryUrl === nextUrl;
+  }
+
+  return false;
+};
+
+const getExternalPreloadPath = (plugin, pluginIndexPath) => {
   const { name, preload, tplPath, indexPath } = plugin;
-  if (!preload) return;
+  if (!preload) return undefined;
   if (commonConst.dev()) {
-    if (name === 'rubick-system-feature') {
-      return path.resolve(__static, `../feature/public/preload.js`);
-    }
     if (tplPath) {
-      return path.resolve(getRelativePath(indexPath), `./`, preload);
+      return path.resolve(toFileSystemPath(indexPath), './', preload);
     }
-    return path.resolve(getRelativePath(pluginIndexPath), `../`, preload);
+    return path.resolve(toFileSystemPath(pluginIndexPath), '../', preload);
   }
   if (tplPath) {
-    return path.resolve(getRelativePath(indexPath), `./`, preload);
+    return path.resolve(toFileSystemPath(indexPath), './', preload);
   }
-  return path.resolve(getRelativePath(pluginIndexPath), `../`, preload);
+  return path.resolve(toFileSystemPath(pluginIndexPath), '../', preload);
+};
+
+const configuredSessions = new WeakSet<Session>();
+
+const configurePluginSession = (ses: Session) => {
+  if (configuredSessions.has(ses)) {
+    return;
+  }
+
+  configuredSessions.add(ses);
+
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    callback({
+      requestHeaders: {
+        ...details.requestHeaders,
+        referer: '*',
+      },
+    });
+  });
+
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...(details.responseHeaders || {}),
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, PATCH, DELETE, OPTIONS'],
+      },
+    });
+  });
+};
+
+const attachViewDebugLogs = (plugin, view: ManagedView) => {
+  if (!commonConst.dev()) {
+    return;
+  }
+
+  const prefix = isSecureInternalPlugin(plugin)
+    ? `internal-view:${plugin.name}`
+    : `plugin-view:${plugin.name}`;
+
+  view.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL) => {
+      console.error(
+        `[${prefix}:load-fail] ${errorCode} ${errorDescription} ${validatedURL}`
+      );
+    }
+  );
+
+  view.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[${prefix}:gone]`, details);
+  });
 };
 
 const viewPoolManager = () => {
@@ -56,45 +152,63 @@ const viewPoolManager = () => {
 };
 
 export default () => {
-  let view;
+  let view: ManagedView | undefined;
   const viewInstance = viewPoolManager();
+
+  const syncViewBounds = (window: BrowserWindow, targetView = view) => {
+    if (!targetView || targetView.inDetach) {
+      return;
+    }
+
+    setManagedViewBounds(window, targetView, WINDOW_HEIGHT);
+  };
+
+  const bindWindowResize = (window: BrowserWindow) => {
+    if ((window as BrowserWindow & { __rubickViewResizeBound?: boolean }).__rubickViewResizeBound) {
+      return;
+    }
+
+    (window as BrowserWindow & { __rubickViewResizeBound?: boolean }).__rubickViewResizeBound = true;
+    window.on('resize', () => {
+      syncViewBounds(window);
+    });
+  };
+
+  const executeHooks = (hook, data) => {
+    if (!view) return;
+    const evalJs = `window.rubick?.__dispatchHook?.('${hook}'${
+      data ? `, ${JSON.stringify(data)}` : ''
+    })`;
+    executeJavaScriptSafely(view.webContents, evalJs);
+  };
 
   const viewReadyFn = async (window, { pluginSetting, ext }) => {
     if (!view) return;
     const height = pluginSetting && pluginSetting.height;
     window.setSize(WINDOW_WIDTH, height || WINDOW_PLUGIN_HEIGHT);
-    view.setBounds({
-      x: 0,
-      y: WINDOW_HEIGHT,
-      width: WINDOW_WIDTH,
-      height: height || WINDOW_PLUGIN_HEIGHT - WINDOW_HEIGHT,
-    });
-    view.setAutoResize({ width: true, height: true });
+    syncViewBounds(window, view);
+    enableManagedViewAutoResize(view);
+    view.webContents.focus();
     executeHooks('PluginEnter', ext);
     executeHooks('PluginReady', ext);
     const config = await localConfig.getConfig();
     const darkMode = config.perf.common.darkMode;
-    darkMode &&
-      view.webContents.executeJavaScript(
-        `document.body.classList.add("dark");window.rubick.theme="dark"`
+    if (darkMode) {
+      executeJavaScriptSafely(
+        view.webContents,
+        `window.setRubickThemeMode ? window.setRubickThemeMode('dark') : document.body.classList.add('dark')`
       );
-    window.webContents.executeJavaScript(`window.pluginLoaded()`);
+    }
+    executeJavaScriptSafely(window.webContents, `window.pluginLoaded()`);
   };
 
   const init = (plugin, window: BrowserWindow) => {
     if (view === null || view === undefined || view.inDetach) {
       createView(plugin, window);
-      // if (viewInstance.getView(plugin.name) && !commonConst.dev()) {
-      //   view = viewInstance.getView(plugin.name).view;
-      //   window.setBrowserView(view);
-      //   view.inited = true;
-      //   viewReadyFn(window, plugin);
-      // } else {
-      //   createView(plugin, window);
-      //   viewInstance.addView(plugin.name, view);
-      // }
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@electron/remote/main').enable(view.webContents);
+      if (!isSecureInternalPlugin(plugin)) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('@electron/remote/main').enable(view.webContents);
+      }
     }
   };
 
@@ -108,116 +222,150 @@ export default () => {
       pluginSetting,
       ext,
     } = plugin;
+
+    const secureInternalPlugin = isSecureInternalPlugin(plugin);
     let pluginIndexPath = tplPath || indexPath;
     let preloadPath;
-    let darkMode;
-    // 开发环境
-    if (commonConst.dev() && development) {
+
+    if (commonConst.dev() && development && !secureInternalPlugin) {
       pluginIndexPath = development;
       const pluginPath = path.resolve(baseDir, 'node_modules', name);
-      preloadPath = `file://${path.join(pluginPath, './', main)}`;
+      preloadPath = path.resolve(pluginPath, plugin.preload || '');
     }
-    // 再尝试去找
+
     if (plugin.name === 'rubick-system-feature' && !pluginIndexPath) {
-      pluginIndexPath = commonConst.dev()
-        ? 'http://localhost:8081/#/'
-        : `file://${__static}/feature/index.html`;
+      pluginIndexPath = getSubAppEntry('feature');
     }
+
+    if (!plugin.main && !pluginIndexPath) {
+      pluginIndexPath = getSubAppEntry('tpl');
+    }
+
     if (!pluginIndexPath) {
       const pluginPath = path.resolve(baseDir, 'node_modules', name);
-      pluginIndexPath = `file://${path.join(pluginPath, './', main)}`;
+      pluginIndexPath = pathToFileURL(
+        path.join(pluginPath, './', main)
+      ).toString();
     }
-    const preload = getPreloadPath(plugin, preloadPath || pluginIndexPath);
 
-    const ses = session.fromPartition('<' + name + '>');
-    ses.setPreloads([`${__static}/preload.js`]);
+    const partition = secureInternalPlugin ? `<internal:${name}>` : `<${name}>`;
+    const ses = session.fromPartition(partition);
+    configurePluginSession(ses);
+    if (!secureInternalPlugin) {
+      ses.setPreloads([getPreloadPath('compat')]);
+      preloadPath = preloadPath || getExternalPreloadPath(plugin, pluginIndexPath);
+    }
+
+    const webPreferences = secureInternalPlugin
+      ? {
+          webSecurity: true,
+          backgroundThrottling: false,
+          sandbox: false,
+          contextIsolation: true,
+          nodeIntegration: false,
+          navigateOnDragDrop: false,
+          preload:
+            plugin.name === 'rubick-system-feature'
+              ? getPreloadPath('feature')
+              : getPreloadPath('tpl'),
+          session: ses,
+          defaultFontSize: 14,
+          defaultFontFamily: {
+            standard: 'system-ui',
+            serif: 'system-ui',
+          },
+          spellcheck: false,
+        }
+      : {
+          webSecurity: false,
+          nodeIntegration: true,
+          contextIsolation: false,
+          devTools: true,
+          webviewTag: true,
+          preload: preloadPath,
+          session: ses,
+          defaultFontSize: 14,
+          defaultFontFamily: {
+            standard: 'system-ui',
+            serif: 'system-ui',
+          },
+          spellcheck: false,
+        };
 
     view = new BrowserView({
-      webPreferences: {
-        webSecurity: false,
-        nodeIntegration: true,
-        contextIsolation: false,
-        devTools: true,
-        webviewTag: true,
-        preload,
-        session: ses,
-        defaultFontSize: 14,
-        defaultFontFamily: {
-          standard: 'system-ui',
-          serif: 'system-ui',
-        },
-        spellcheck: false,
-      },
+      webPreferences,
     });
-    window.setBrowserView(view);
-    view.webContents.loadURL(pluginIndexPath);
-    view.webContents.once('dom-ready', () => viewReadyFn(window, plugin));
-    // 修复请求跨域问题
-    view.webContents.session.webRequest.onBeforeSendHeaders(
-      (details, callback) => {
-        callback({
-          requestHeaders: { referer: '*', ...details.requestHeaders },
-        });
-      }
-    );
 
-    view.webContents.session.webRequest.onHeadersReceived(
-      (details, callback) => {
-        callback({
-          responseHeaders: {
-            'Access-Control-Allow-Origin': ['*'],
-            ...details.responseHeaders,
-          },
-        });
-      }
-    );
+    attachViewDebugLogs(plugin, view);
+    if (secureInternalPlugin) {
+      const internalEntry = pluginIndexPath;
+      view.webContents.on('will-navigate', (event, url) => {
+        if (!canStayOnInternalEntry(internalEntry, url)) {
+          event.preventDefault();
+          if (/^file:/i.test(url)) {
+            try {
+              const droppedPath = fileURLToPath(url);
+              if (process.env.NODE_ENV !== 'production') {
+                console.log(
+                  `[internal-view:${plugin.name}:drop-nav] ${droppedPath}`
+                );
+              }
+              executeHooks('HostDrop', { files: [droppedPath] });
+            } catch (error) {
+              if (process.env.NODE_ENV !== 'production') {
+                console.error(
+                  `[internal-view:${plugin.name}:drop-nav:error]`,
+                  error
+                );
+              }
+            }
+          }
+        }
+      });
+    }
+    bindWindowResize(window);
+    attachManagedView(window, view);
+    syncViewBounds(window, view);
+    view.webContents.once('did-finish-load', () => viewReadyFn(window, plugin));
+    view.webContents.loadURL(pluginIndexPath);
+    view.webContents.focus();
   };
 
   const removeView = (window: BrowserWindow) => {
     if (!view) return;
     executeHooks('PluginOut', null);
-    // 先记住这次要移除的视图，防止后面异步代码里全局引用被换掉
     const snapshotView = view;
-    setTimeout(() => {
-      // 获取当前视图，判断是否已经换成了新视图
-      const currentView = window.getBrowserView?.();
-      window.removeBrowserView(snapshotView);
+    detachManagedView(window, snapshotView);
+    executeJavaScriptSafely(window.webContents, `window.initRubick()`);
 
-      // 主窗口的插件视图仍然挂着旧实例时，需要还原主窗口 UI
+    if (view === snapshotView) {
+      view = undefined;
+    }
+
+    setTimeout(() => {
       if (!snapshotView.inDetach) {
-        // 如果窗口还挂着旧视图，说明还没换掉，需要把主窗口恢复到初始状态
-        if (currentView === snapshotView) {
-          window.setBrowserView(null);
-          if (view === snapshotView) {
-            window.webContents?.executeJavaScript(`window.initRubick()`);
-            view = undefined;
-          }
-        }
         snapshotView.webContents?.destroy();
-      }
-      // 分离窗口只需释放全局引用，视图由分离窗口继续管理
-      else if (view === snapshotView) {
-        view = undefined;
       }
     }, 0);
   };
 
   const getView = () => view;
 
-  const executeHooks = (hook, data) => {
-    if (!view) return;
-    const evalJs = `if(window.rubick && window.rubick.hooks && typeof window.rubick.hooks.on${hook} === 'function' ) {
-          try {
-            window.rubick.hooks.on${hook}(${data ? JSON.stringify(data) : ''});
-          } catch(e) {}
-        }
-      `;
-    view.webContents?.executeJavaScript(evalJs);
+  const takeView = (window: BrowserWindow) => {
+    if (!view) {
+      return undefined;
+    }
+
+    const snapshotView = view;
+    detachManagedView(window, snapshotView);
+    view = undefined;
+    return snapshotView;
   };
 
   return {
     init,
     getView,
+    takeView,
     removeView,
     executeHooks,
   };

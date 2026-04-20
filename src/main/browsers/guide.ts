@@ -1,12 +1,12 @@
 import { BrowserWindow, ipcMain, nativeTheme, screen } from 'electron';
-import path from 'path';
 import {
   GUIDE_WIDTH,
   WINDOW_MIN_HEIGHT,
   GUIDE_HEIGHT,
 } from '@/common/constans/common';
+import { getPreloadPath, getSubAppEntry } from '@/main/common/runtimePaths';
 
-const getWindowPos = (width, height) => {
+const getWindowPos = (width: number, height: number) => {
   const screenPoint = screen.getCursorScreenPoint();
   const displayPoint = screen.getDisplayNearestPoint(screenPoint);
   return [
@@ -16,7 +16,7 @@ const getWindowPos = (width, height) => {
   ];
 };
 
-let win: any;
+let win: BrowserWindow | null = null;
 
 export default () => {
   const init = () => {
@@ -37,11 +37,11 @@ export default () => {
       fullscreenable: false,
       minimizable: false,
       maximizable: false,
-      // closable: false,
       skipTaskbar: true,
       autoHideMenuBar: true,
       frame: false,
       enableLargerThanScreen: true,
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c28' : '#fff',
       x,
       y,
       width: GUIDE_WIDTH,
@@ -50,33 +50,30 @@ export default () => {
       webPreferences: {
         webSecurity: false,
         backgroundThrottling: false,
-        contextIsolation: false,
-        webviewTag: true,
-        devTools: true,
-        nodeIntegration: true,
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: getPreloadPath('guide'),
         spellcheck: false,
       },
     });
-    if (process.env.WEBPACK_DEV_SERVER_URL) {
-      // Load the url of the dev server if in development mode
-      win.loadURL('http://localhost:8084');
-    } else {
-      win.loadURL(`file://${path.join(__static, './guide/index.html')}`);
-    }
+
+    await win.loadURL(getSubAppEntry('guide'));
+
     win.on('closed', () => {
-      win = undefined;
+      win = null;
     });
 
     win.once('ready-to-show', () => {
-      // win.webContents.openDevTools();
-      win.show();
+      win?.show();
     });
   };
-  const getWindow = () => win;
+
+  const getWindow = () => win as BrowserWindow;
 
   const operation = {
     close: () => {
-      win.close();
+      win?.close();
       win = null;
     },
   };

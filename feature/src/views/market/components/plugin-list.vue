@@ -83,14 +83,18 @@
         </div>
       </template>
       <a-spin :spinning="!content" tip="内容加载中...">
-        <div v-if="content !== 'error'" v-html="content" class="home-page-container"></div>
-        <a-result
-          class="error-content"
-          v-else
-          sub-title="插件主页内容走丢啦！"
-        >
+        <div
+          v-if="content !== 'error'"
+          v-html="content"
+          class="home-page-container"
+        ></div>
+        <a-result class="error-content" v-else sub-title="插件主页内容走丢啦！">
           <template #icon>
-            <Vue3Lottie :animationData="notFountJson" :height="240" :width="240" />
+            <Vue3Lottie
+              :animationData="notFountJson"
+              :height="240"
+              :width="240"
+            />
           </template>
         </a-result>
       </a-spin>
@@ -102,16 +106,17 @@
 import {
   CloudDownloadOutlined,
   ArrowLeftOutlined,
-  SelectOutlined
+  SelectOutlined,
 } from '@ant-design/icons-vue';
 
-import { defineProps, ref, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useStore } from 'vuex';
 import { message } from 'ant-design-vue';
 import MarkdownIt from 'markdown-it';
 import { useRouter } from 'vue-router';
 import request from '@/assets/request/index';
 import notFountJson from '@/assets/lottie/404.json';
+import { toBridgePayload } from '@/utils/bridge';
 import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 
@@ -120,6 +125,7 @@ const router = useRouter();
 
 const startDownload = (name) => store.dispatch('startDownload', name);
 const successDownload = (name) => store.dispatch('successDownload', name);
+const errorDownload = (name) => store.dispatch('errorDownload', name);
 
 const props = defineProps({
   list: {
@@ -131,9 +137,19 @@ const props = defineProps({
 
 const downloadPlugin = async (plugin) => {
   startDownload(plugin.name);
-  await window.market.downloadPlugin(plugin);
-  message.success(t('feature.dev.installSuccess', { pluginName: plugin.pluginName }));
-  successDownload(plugin.name);
+  try {
+    await window.market.downloadPlugin(toBridgePayload(plugin));
+    message.success(
+      t('feature.dev.installSuccess', { pluginName: plugin.pluginName })
+    );
+    successDownload(plugin.name);
+  } catch (error) {
+    errorDownload(plugin.name);
+    console.error('[feature-market:download]', error);
+    message.error(
+      (error && error.message) || `${plugin.pluginName || plugin.name} 安装失败`
+    );
+  }
 };
 
 const visible = ref(false);
@@ -160,10 +176,10 @@ const showDetail = async (index) => {
 const detail = computed(() => props.list[showIndex.value]);
 
 const openPlugin = (item) => {
-  store.commit('commonUpdate', {active: ['installed']})
+  store.commit('commonUpdate', { active: ['installed'] });
   router.push({
     path: '/installed',
-    query: {plugin: item.name}
+    query: { plugin: item.name },
   });
 };
 </script>

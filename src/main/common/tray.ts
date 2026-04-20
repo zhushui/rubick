@@ -1,28 +1,25 @@
 import { dialog, Menu, Tray, app, shell, BrowserWindow } from 'electron';
-import path from 'path';
 import pkg from '../../../package.json';
 import os from 'os';
 import commonConst from '@/common/utils/commonConst';
 import { guide } from '../browsers';
+import { getStaticAssetPath } from './runtimePaths';
 
 function createTray(window: BrowserWindow): Promise<Tray> {
   return new Promise((resolve) => {
     let icon;
     if (commonConst.macOS()) {
-      icon = './icons/iconTemplate@2x.png';
+      icon = 'icons/iconTemplate@2x.png';
     } else if (commonConst.windows()) {
-      icon =
-        parseInt(os.release()) < 10
-          ? './icons/icon@2x.png'
-          : './icons/icon.ico';
+      icon = parseInt(os.release(), 10) < 10 ? 'icons/icon@2x.png' : 'icons/icon.ico';
     } else {
-      icon = './icons/icon@2x.png';
+      icon = 'icons/icon@2x.png';
     }
-    const appIcon = new Tray(path.join(__static, icon));
+    const appIcon = new Tray(getStaticAssetPath(icon));
 
     const openSettings = () => {
       window.webContents.executeJavaScript(
-        `window.rubick && window.rubick.openMenu && window.rubick.openMenu({ code: "settings" })`
+        `window.openRubickMenu && window.openRubickMenu({ code: 'settings' })`
       );
       window.show();
     };
@@ -76,14 +73,13 @@ function createTray(window: BrowserWindow): Promise<Tray> {
             app.quit();
           },
         },
-
         { type: 'separator' },
         {
           label: '关于',
           click() {
             dialog.showMessageBox({
-              title: '拉比克',
-              message: '极简、插件化的现代桌面软件',
+              title: 'Rubick',
+              message: '极简、插件化的现代桌面工具箱',
               detail: `Version: ${pkg.version}\nAuthor: muwoo`,
             });
           },

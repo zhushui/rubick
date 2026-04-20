@@ -1,20 +1,33 @@
 <template>
   <div class="finder">
-    <Carousel :itemsToShow="2" :transition="500">
+    <a-result
+      v-if="loadError"
+      class="finder-error"
+      status="warning"
+      title="插件市场暂时不可用"
+      sub-title="远程索引加载失败，稍后重试或检查市场源配置。"
+    >
+      <template #extra>
+        <a-button type="primary" @click="loadFinder">重新加载</a-button>
+      </template>
+    </a-result>
+    <Carousel v-if="!loadError" :itemsToShow="2" :transition="500">
       <Slide :key="index" v-for="(banner, index) in data.banners || []">
-        <img class="carousel__item" @click="jumpTo(banner.link)" :src="banner.src" />
+        <img
+          class="carousel__item"
+          @click="jumpTo(banner.link)"
+          :src="banner.src"
+        />
       </Slide>
     </Carousel>
-    <a-divider />
+    <a-divider v-if="!loadError" />
     <PluginList
       v-if="must && !!must.length"
-      @downloadSuccess="downloadSuccess"
       :title="$t('feature.market.finder.must')"
       :list="must"
     />
     <PluginList
       v-if="recommend && !!recommend.length"
-      @downloadSuccess="downloadSuccess"
       :title="$t('feature.market.finder.recommended')"
       :list="recommend"
     />
@@ -38,10 +51,25 @@ const store = useStore();
 const totalPlugins = computed(() => store.state.totalPlugins);
 
 const data = ref([]);
+const loadError = ref(false);
 
-onBeforeMount(async () => {
-  data.value = await request.getFinderDetail();
-});
+const loadFinder = async () => {
+  try {
+    data.value = await request.getFinderDetail();
+    loadError.value = false;
+  } catch (error) {
+    console.error('[feature-market:finder]', error);
+    data.value = {
+      banners: [],
+      must: [],
+      recommend: [],
+      new: [],
+    };
+    loadError.value = true;
+  }
+};
+
+onBeforeMount(loadFinder);
 
 const must = computed(() => {
   const defaultData = data.value.must || [];
@@ -104,6 +132,9 @@ const newList = computed(() => {
   }
 }
 
+.finder-error {
+  padding: 12px 0 28px;
+}
 
 .carousel__item {
   cursor: pointer;

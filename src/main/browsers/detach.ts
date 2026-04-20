@@ -1,23 +1,45 @@
 import { BrowserWindow, ipcMain, nativeTheme, screen } from 'electron';
 import localConfig from '../common/initLocalConfig';
 import commonConst from '@/common/utils/commonConst';
-import path from 'path';
 import { WINDOW_MIN_HEIGHT } from '@/common/constans/common';
-import mainInstance from '@/main';
-export default () => {
-  let win: any;
+import { getPreloadPath, getSubAppEntry } from '@/main/common/runtimePaths';
+import executeJavaScriptSafely from '@/main/common/executeJavaScriptSafely';
+import {
+  attachManagedView,
+  detachManagedView,
+  destroyManagedView,
+  enableManagedViewAutoResize,
+  ManagedView,
+  setManagedViewBounds,
+} from '@/main/common/managedView';
 
-  const init = async (pluginInfo, viewInfo, view) => {
+export default () => {
+  let win: BrowserWindow | undefined;
+
+  const syncViewBounds = (window: BrowserWindow, view: ManagedView) => {
+    setManagedViewBounds(window, view, WINDOW_MIN_HEIGHT);
+  };
+
+  const init = async (pluginInfo, viewInfo, view: ManagedView) => {
+    ipcMain.removeAllListeners('detach:service');
     ipcMain.on('detach:service', async (event, arg: { type: string }) => {
       const data = await operation[arg.type]();
       event.returnValue = data;
     });
-    const createWin = await createWindow(pluginInfo, viewInfo, view);
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require('@electron/remote/main').enable(createWin.webContents);
+    await createWindow(pluginInfo, viewInfo, view);
   };
 
-  const createWindow = async (pluginInfo, viewInfo, view) => {
+  const createWindow = async (pluginInfo, viewInfo, view: ManagedView) => {
+    let detached = false;
+    const cleanupAttachedView = () => {
+      if (detached) {
+        return;
+      }
+
+      detached = true;
+      detachManagedView(createWin, view);
+    };
+
     const createWin = new BrowserWindow({
       height: viewInfo.height,
       minHeight: WINDOW_MIN_HEIGHT,
@@ -36,25 +58,23 @@ export default () => {
       webPreferences: {
         webSecurity: false,
         backgroundThrottling: false,
-        contextIsolation: false,
-        webviewTag: true,
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
         devTools: true,
-        nodeIntegration: true,
-        navigateOnDragDrop: true,
+        navigateOnDragDrop: false,
         spellcheck: false,
+        preload: getPreloadPath('detach'),
       },
     });
-    if (process.env.WEBPACK_DEV_SERVER_URL) {
-      // Load the url of the dev server if in development mode
-      createWin.loadURL('http://localhost:8082');
-    } else {
-      createWin.loadURL(`file://${path.join(__static, './detach/index.html')}`);
-    }
+    const loadDetachWindow = createWin.loadURL(getSubAppEntry('detach'));
+
     createWin.on('close', () => {
       executeHooks('PluginOut', null);
+      cleanupAttachedView();
     });
     createWin.on('closed', () => {
-      view.webContents?.destroy();
+      destroyManagedView(view);
       win = undefined;
     });
     createWin.on('focus', () => {
@@ -65,24 +85,32 @@ export default () => {
     createWin.once('ready-to-show', async () => {
       const config = await localConfig.getConfig();
       const darkMode = config.perf.common.darkMode;
-      darkMode &&
-        createWin.webContents.executeJavaScript(
-          `document.body.classList.add("dark");window.rubick.theme="dark"`
+      if (darkMode) {
+        executeJavaScriptSafely(
+          createWin.webContents,
+          `window.setRubickThemeMode ? window.setRubickThemeMode('dark') : document.body.classList.add('dark')`
         );
-      view.setAutoResize({ width: true, height: true });
-      createWin.setBrowserView(view);
+      }
+      enableManagedViewAutoResize(view);
+      attachManagedView(createWin, view);
       view.inDetach = true;
-      createWin.webContents.executeJavaScript(
+      syncViewBounds(createWin, view);
+      executeJavaScriptSafely(
+        createWin.webContents,
         `window.initDetach(${JSON.stringify(pluginInfo)})`
       );
       createWin.show();
     });
 
-    // 最大化设置
+    createWin.on('resize', () => {
+      syncViewBounds(createWin, view);
+    });
+
     createWin.on('maximize', () => {
-      createWin.webContents.executeJavaScript('window.maximizeTrigger()');
-      const view = createWin.getBrowserView();
-      if (!view) return;
+      executeJavaScriptSafely(
+        createWin.webContents,
+        'window.maximizeTrigger()'
+      );
       const display = screen.getDisplayMatching(createWin.getBounds());
       view.setBounds({
         x: 0,
@@ -91,19 +119,20 @@ export default () => {
         height: display.workArea.height - WINDOW_MIN_HEIGHT,
       });
     });
-    // 最小化
+
     createWin.on('unmaximize', () => {
-      createWin.webContents.executeJavaScript('window.unmaximizeTrigger()');
-      const view = createWin.getBrowserView();
-      if (!view) return;
+      executeJavaScriptSafely(
+        createWin.webContents,
+        'window.unmaximizeTrigger()'
+      );
       const bounds = createWin.getBounds();
       const display = screen.getDisplayMatching(bounds);
       const width =
-        (display.scaleFactor * bounds.width) % 1 == 0
+        (display.scaleFactor * bounds.width) % 1 === 0
           ? bounds.width
           : bounds.width - 2;
       const height =
-        (display.scaleFactor * bounds.height) % 1 == 0
+        (display.scaleFactor * bounds.height) % 1 === 0
           ? bounds.height
           : bounds.height - 2;
       view.setBounds({
@@ -114,46 +143,53 @@ export default () => {
       });
     });
 
-    createWin.on('page-title-updated', (e) => {
-      e.preventDefault();
+    createWin.on('page-title-updated', (event) => {
+      event.preventDefault();
     });
+    createWin.webContents.on(
+      'did-fail-load',
+      (_event, errorCode, errorDescription, validatedURL) => {
+        console.error(
+          `[detach-window:load-fail] ${errorCode} ${errorDescription} ${validatedURL}`
+        );
+      }
+    );
     createWin.webContents.once('render-process-gone', () => {
       createWin.close();
     });
 
     if (commonConst.macOS()) {
       createWin.on('enter-full-screen', () => {
-        createWin.webContents.executeJavaScript(
+        executeJavaScriptSafely(
+          createWin.webContents,
           'window.enterFullScreenTrigger()'
         );
       });
       createWin.on('leave-full-screen', () => {
-        createWin.webContents.executeJavaScript(
+        executeJavaScriptSafely(
+          createWin.webContents,
           'window.leaveFullScreenTrigger()'
         );
       });
     }
 
-    view.webContents.on('before-input-event', (event, input) => {
+    view.webContents.on('before-input-event', (_event, input) => {
       if (input.type !== 'keyDown') return;
       if (!(input.meta || input.control || input.shift || input.alt)) {
         if (input.key === 'Escape') {
           operation.endFullScreen();
         }
-        return;
       }
     });
 
     const executeHooks = (hook, data) => {
       if (!view) return;
-      const evalJs = `console.log(window.rubick);if(window.rubick && window.rubick.hooks && typeof window.rubick.hooks.on${hook} === 'function' ) {
-          try {
-            window.rubick.hooks.on${hook}(${data ? JSON.stringify(data) : ''});
-          } catch(e) {console.log(e)}
-        }
-      `;
-      view.webContents.executeJavaScript(evalJs);
+      const evalJs = `window.rubick?.__dispatchHook?.('${hook}'${
+        data ? `, ${JSON.stringify(data)}` : ''
+      })`;
+      executeJavaScriptSafely(view.webContents, evalJs);
     };
+    await loadDetachWindow;
     return createWin;
   };
 
@@ -161,17 +197,20 @@ export default () => {
 
   const operation = {
     minimize: () => {
-      win.focus();
-      win.minimize();
+      win?.focus();
+      win?.minimize();
     },
     maximize: () => {
+      if (!win) return;
       win.isMaximized() ? win.unmaximize() : win.maximize();
     },
     close: () => {
-      win.close();
+      win?.close();
     },
     endFullScreen: () => {
-      win.isFullScreen() && win.setFullScreen(false);
+      if (win?.isFullScreen()) {
+        win.setFullScreen(false);
+      }
     },
   };
 

@@ -1,24 +1,26 @@
-# guide
+# @rubick/guide
 
-## Project setup
-```
-yarn install
-```
+`guide` is one of Rubick's standalone Vite applications and is used for onboarding and guide pages.
 
-### Compiles and hot-reloads for development
-```
-yarn serve
-```
+## From the workspace root
 
-### Compiles and minifies for production
-```
-yarn build
+```bash
+pnpm install
+pnpm --filter @rubick/guide dev
+pnpm --filter @rubick/guide build
+pnpm --filter @rubick/guide preview
 ```
 
-### Lints and fixes files
-```
-yarn lint
+## From this directory
+
+```bash
+pnpm dev
+pnpm build
+pnpm preview
 ```
 
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+- Dev port: `5177`
+- Preview port: `4177`
+- Build output: `../dist/apps/guide`
+
+See [../DEVELOPMENT.zh-CN.md](../DEVELOPMENT.zh-CN.md) for the full workspace development flow.

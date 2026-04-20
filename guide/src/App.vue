@@ -46,11 +46,10 @@
 import { ref } from 'vue';
 
 const step = ref(0);
-const { ipcRenderer } = window.require('electron');
 
 const netStep = () => {
   if (step.value >= 3) {
-    return ipcRenderer.send('guide:service', { type: 'close' });
+    return window.guideBridge.close();
   }
   step.value = step.value + 1;
 }

@@ -1,12 +1,22 @@
 <template>
   <div class="export-header">
-    <a-button @click="exportData" size="small" type="primary" style="margin-right: 10px;">
+    <a-button
+      @click="exportData"
+      size="small"
+      type="primary"
+      style="margin-right: 10px"
+    >
       导出数据
       <template #icon>
         <ExportOutlined />
       </template>
     </a-button>
-    <a-button @click="importData" danger size="small" style="margin-right: 10px; background-color: var(--color-input-hover)">
+    <a-button
+      @click="importData"
+      danger
+      size="small"
+      style="margin-right: 10px; background-color: var(--color-input-hover)"
+    >
       导入数据
       <template #icon>
         <ImportOutlined />
@@ -22,15 +32,18 @@
     <template #renderItem="{ item }">
       <a-list-item>
         <template #actions>
-          <a v-if="!item.plugin?.isdownload && !item.plugin?.isloading" key="list-loadmore-edit"
-             @click="() => downloadPlugin(item.plugin)">
-            <CloudDownloadOutlined style="font-size: 18px;"/>
+          <a
+            v-if="!item.plugin?.isdownload && !item.plugin?.isloading"
+            key="list-loadmore-edit"
+            @click="() => downloadPlugin(item.plugin)"
+          >
+            <CloudDownloadOutlined style="font-size: 18px" />
           </a>
           <a v-if="item.plugin?.isloading" key="list-loadmore-edit">
-            <LoadingOutlined style="font-size: 18px;"/>
+            <LoadingOutlined style="font-size: 18px" />
           </a>
           <a key="list-loadmore-edit" @click="() => showKeys(item)">
-            <DatabaseOutlined style="font-size: 18px;"/>
+            <DatabaseOutlined style="font-size: 18px" />
           </a>
         </template>
         <a-list-item-meta>
@@ -40,7 +53,7 @@
             </div>
           </template>
           <template #avatar>
-            <a-avatar shape="square" :src="item.plugin?.logo"/>
+            <a-avatar shape="square" :src="item.plugin?.logo" />
           </template>
           <template #description>
             <div style="color: var(--color-text-desc)">
@@ -74,7 +87,7 @@
       maxHeight: '500px',
       overflow: 'auto',
       backgroundColor: 'var(--color-body-bg)',
-      color: 'var(--color-text-primary)'
+      color: 'var(--color-text-primary)',
     }"
     :footer="null"
     :closable="false"
@@ -88,11 +101,14 @@
     :footer="null"
     class="webdavModel"
   >
-    <a-alert v-if="formState.suport === 'jianguo'" style="margin-bottom: 20px;" type="info" show-icon>
+    <a-alert
+      v-if="formState.suport === 'jianguo'"
+      style="margin-bottom: 20px"
+      type="info"
+      show-icon
+    >
       <template #message>
-        <div
-          @click="openHelp"
-          class="openHelp">
+        <div @click="openHelp" class="openHelp">
           点击查看如何获取坚果云账号密码
         </div>
       </template>
@@ -105,10 +121,7 @@
       autocomplete="off"
       @finish="handleOk"
     >
-      <a-form-item
-        label="webdav 提供商"
-        name="suport"
-      >
+      <a-form-item label="webdav 提供商" name="suport">
         <a-select v-model:value="formState.suport">
           <a-select-option value="jianguo">坚果云</a-select-option>
           <a-select-option value="auto">自定义</a-select-option>
@@ -144,7 +157,7 @@
 </template>
 <script setup>
 import { useStore } from 'vuex';
-import { computed, ref, reactive } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import {
   DatabaseOutlined,
   CloudDownloadOutlined,
@@ -154,7 +167,9 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
+import { toBridgePayload } from '@/utils/bridge';
 import { useI18n } from 'vue-i18n';
+import builtinLogo from '@/assets/logo.png';
 
 const { t } = useI18n();
 
@@ -192,21 +207,21 @@ const handleOk = () => {
   showSetting.value = false;
 };
 
-const showDetail = (key) => {
+const showDetail = async (key) => {
   show.value = true;
-  detail.value = window.rubick.db.get(key);
+  detail.value = (await window.rubick.db.get(key)) || {};
 };
 
 const exportData = () => {
   if (!formState.password || !formState.username) {
-    return showSetting.value = true;
+    return (showSetting.value = true);
   }
   window.market.dbDump(JSON.parse(JSON.stringify(formState)));
 };
 
 const importData = () => {
   if (!formState.password || !formState.username) {
-    return showSetting.value = true;
+    return (showSetting.value = true);
   }
   Modal.confirm({
     title: '导入确认',
@@ -222,29 +237,31 @@ const openHelp = () => {
 };
 
 const store = useStore();
+const pluginsData = ref(null);
 
-const pluginsData = window.rubick.db.get('RUBICK_PLUGIN_INFO');
+onMounted(async () => {
+  pluginsData.value = await window.rubick.db.get('RUBICK_PLUGIN_INFO');
+});
 
 const totalPlugins = computed(() => store.state.totalPlugins);
 
 const dataPlugins = computed(() => {
-  if (!pluginsData) return [];
-  return pluginsData.data.map((item) => {
+  if (!pluginsData.value?.data) return [];
+  return pluginsData.value.data.map((item) => {
     let plugin = null;
     if (['rubick-system-feature'].includes(item.name)) {
       plugin = {
         pluginName: '主程序',
         isdownload: true,
-        logo: require('../../assets/logo.png'),
+        logo: builtinLogo,
       };
     } else {
       plugin = totalPlugins.value.find((p) => p.name === item.name);
     }
-    const data = item.keys.map((key) => window.rubick.db.get(key));
     return {
       ...item,
       plugin,
-      data,
+      data: [],
     };
   });
 });
@@ -254,7 +271,7 @@ const successDownload = (name) => store.dispatch('successDownload', name);
 
 const downloadPlugin = async (plugin) => {
   startDownload(plugin.name);
-  await window.market.downloadPlugin(plugin);
+  await window.market.downloadPlugin(toBridgePayload(plugin));
   message.success(t('feature.dev.installSuccess', { pluginName: plugin.name }));
   successDownload(plugin.name);
 };
@@ -277,31 +294,31 @@ const downloadPlugin = async (plugin) => {
     color: var(--ant-primary-color);
   }
 }
-.exportDrawer{
-  .ant-drawer-header{
+.exportDrawer {
+  .ant-drawer-header {
     background-color: var(--color-body-bg);
     border-bottom: 1px solid var(--color-border-light);
-    .ant-drawer-title{
+    .ant-drawer-title {
       color: var(--color-text-primary);
     }
   }
-  .ant-drawer-body{
+  .ant-drawer-body {
     background-color: var(--color-body-bg);
-    color: var(--color-text-content)
-  }
-}
-.webdavModel{
-  .ant-modal-close-x{
     color: var(--color-text-content);
   }
-  .ant-modal-header{
+}
+.webdavModel {
+  .ant-modal-close-x {
+    color: var(--color-text-content);
+  }
+  .ant-modal-header {
     background-color: var(--color-body-bg);
     border-bottom: 1px solid var(--color-border-light);
-    .ant-modal-title{
+    .ant-modal-title {
       color: var(--color-text-primary);
     }
   }
-  .ant-form-item-label>label {
+  .ant-form-item-label > label {
     color: var(--color-text-content);
   }
   .ant-modal-body {
@@ -312,9 +329,10 @@ const downloadPlugin = async (plugin) => {
       background: var(--color-input-hover) !important;
       color: var(--color-text-content);
     }
-    .ant-input-password-icon, .ant-select-arrow {
+    .ant-input-password-icon,
+    .ant-select-arrow {
       color: var(--color-action-color);
-     }
+    }
   }
 }
 </style>

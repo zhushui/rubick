@@ -1,24 +1,26 @@
-# feature
+# @rubick/feature
 
-## Project setup
-```
-npm install
-```
+`feature` is one of Rubick's standalone Vite applications and contains pages such as the plugin market and settings.
 
-### Compiles and hot-reloads for development
-```
-npm run serve
-```
+## From the workspace root
 
-### Compiles and minifies for production
-```
-npm run build
+```bash
+pnpm install
+pnpm --filter @rubick/feature dev
+pnpm --filter @rubick/feature build
+pnpm --filter @rubick/feature preview
 ```
 
-### Lints and fixes files
-```
-npm run lint
+## From this directory
+
+```bash
+pnpm dev
+pnpm build
+pnpm preview
 ```
 
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+- Dev port: `5174`
+- Preview port: `4174`
+- Build output: `../dist/apps/feature`
+
+See [../DEVELOPMENT.zh-CN.md](../DEVELOPMENT.zh-CN.md) for the full workspace development flow.

@@ -28,7 +28,6 @@
     <div class="local-plugin__list">
       <PluginList
         v-if="pluginList && !!pluginList.length"
-        @downloadSuccess="downloadSuccess"
         :list="pluginList"
       />
     </div>

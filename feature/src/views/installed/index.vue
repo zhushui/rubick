@@ -5,13 +5,15 @@
       <div v-if="!localPlugins.length">
         <a-result
           class="error-content"
-          sub-title="哎呀，暂时还没有安装任何插件！"
+          sub-title="哎呀，暂时还没有安装任何插件。"
         >
           <template #icon>
             <Vue3Lottie :animationData="emptyJson" :height="240" :width="240" />
           </template>
           <template #extra>
-            <a-button @click="gotoFinder" key="console" type="primary">去插件市场看看吧</a-button>
+            <a-button @click="gotoFinder" key="console" type="primary">
+              去插件市场看看吧
+            </a-button>
           </template>
         </a-result>
       </div>
@@ -40,9 +42,8 @@
                 <a-tag>{{ pluginDetail.version }}</a-tag>
               </div>
               <div class="desc">
-                {{ $t('feature.installed.developer') }}：{{
-                  `${pluginDetail.author || $t('feature.installed.unknown')}`
-                }}
+                {{ $t('feature.installed.developer') }}：
+                {{ `${pluginDetail.author || $t('feature.installed.unknown')}` }}
               </div>
               <div class="desc">
                 {{ pluginDetail.description }}
@@ -67,7 +68,7 @@
             >
               <div
                 class="desc-item"
-                v-if="item.cmds.filter(cmd => !cmd.label).length > 0"
+                v-if="item.cmds.filter((cmd) => !cmd.label).length > 0"
               >
                 <div>{{ item.explain }}</div>
                 <template :key="cmd" v-for="cmd in item.cmds">
@@ -76,7 +77,9 @@
                     :class="{ executable: !cmd.label }"
                   >
                     <template #overlay>
-                      <a-menu @click="({key}) => handleMenuClick(key, item, cmd)">
+                      <a-menu
+                        @click="({ key }) => handleMenuClick(key, item, cmd)"
+                      >
                         <a-menu-item key="open">
                           <CaretRightOutlined />
                           运行
@@ -108,9 +111,8 @@
 
 <script setup>
 import { useStore } from 'vuex';
-import { computed, ref, toRaw, watch } from 'vue';
+import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import path from 'path';
 import {
   PushpinOutlined,
   PushpinFilled,
@@ -120,14 +122,7 @@ import {
 import { message } from 'ant-design-vue';
 
 import emptyJson from '@/assets/lottie/empty.json';
-
-const { ipcRenderer } = window.require('electron');
-
-const remote = window.require('@electron/remote');
-const fs = window.require('fs');
-
-const appPath = remote.app.getPath('userData');
-const baseDir = path.join(appPath, './rubick-plugins');
+import { toBridgePayload } from '@/utils/bridge';
 
 const store = useStore();
 const route = useRoute();
@@ -154,27 +149,32 @@ const pluginDetail = computed(() => {
   );
 });
 
-const superPanelPlugins = ref(
-  window.rubick.db.get('super-panel-user-plugins') || {
-    data: [],
-    _id: 'super-panel-user-plugins',
+const superPanelPlugins = ref({
+  data: [],
+  _id: 'super-panel-user-plugins',
+});
+
+onMounted(async () => {
+  const dbData = await window.rubick.db.get('super-panel-user-plugins');
+  if (dbData) {
+    superPanelPlugins.value = dbData;
   }
-);
+});
 
 const handleMenuClick = (key, item, cmd) => {
-  if(key === 'open') {
+  if (key === 'open') {
     openPlugin({
       code: item.code,
       cmd,
     });
   } else if (key === 'add') {
-    addCmdToSuperPanel({cmd, code: item.code});
+    addCmdToSuperPanel({ cmd, code: item.code });
   } else {
-    removePluginToSuperPanel({cmd, name: item.name})
+    removePluginToSuperPanel({ cmd, name: item.name });
   }
 };
 
-const addCmdToSuperPanel = ({ cmd, code }) => {
+const addCmdToSuperPanel = async ({ cmd, code }) => {
   const plugin = {
     ...toRaw(pluginDetail.value),
     cmd,
@@ -185,19 +185,21 @@ const addCmdToSuperPanel = ({ cmd, code }) => {
     },
   };
   superPanelPlugins.value.data.push(plugin);
-  const { rev } = window.rubick.db.put(JSON.parse(JSON.stringify(superPanelPlugins.value)));
-  superPanelPlugins.value._rev = rev;
+  const result = await window.rubick.db.put(
+    JSON.parse(JSON.stringify(superPanelPlugins.value))
+  );
+  superPanelPlugins.value._rev = result?.rev;
 };
 
-const removePluginToSuperPanel = ({ cmd, name }) => {
+const removePluginToSuperPanel = async ({ cmd, name }) => {
   superPanelPlugins.value.data = toRaw(superPanelPlugins.value).data.filter(
     (item) => {
       if (name) return item.name !== name;
       return item.cmd !== cmd;
     }
   );
-  const { rev } = window.rubick.db.put(toRaw(superPanelPlugins.value));
-  superPanelPlugins.value._rev = rev;
+  const result = await window.rubick.db.put(toRaw(superPanelPlugins.value));
+  superPanelPlugins.value._rev = result?.rev;
 };
 
 const hasAdded = (cmd) => {
@@ -213,11 +215,20 @@ const hasAdded = (cmd) => {
 };
 
 const openPlugin = ({ cmd, code }) => {
+  const targetPlugin = toRaw(pluginDetail.value);
+  const resolvedCmd =
+    typeof cmd === 'string' ? cmd : cmd?.label || cmd?.cmd || cmd?.value || '';
+
+  if (!targetPlugin?.name) {
+    message.warning('当前插件信息尚未准备好，请重试');
+    return;
+  }
+
   window.rubick.openPlugin(
     JSON.parse(
       JSON.stringify({
-        ...pluginDetail.value,
-        cmd,
+        ...targetPlugin,
+        cmd: resolvedCmd,
         ext: {
           code,
           type: 'text',
@@ -232,12 +243,21 @@ const deletePlugin = async (plugin) => {
   startUnDownload(plugin.name);
   const timer = setTimeout(() => {
     errorUnDownload(plugin.name);
-    message.error('卸载超时，请重试！');
+    message.error('卸载超时，请重试。');
   }, 20000);
-  await window.market.deletePlugin(plugin);
-  removePluginToSuperPanel({ name: plugin.name });
-  updateLocalPlugin();
-  clearTimeout(timer);
+  try {
+    await window.market.deletePlugin(toBridgePayload(plugin));
+    await removePluginToSuperPanel({ name: plugin.name });
+    updateLocalPlugin();
+  } catch (error) {
+    errorUnDownload(plugin.name);
+    console.error('[feature-market:delete]', error);
+    message.error(
+      (error && error.message) || `${plugin.pluginName || plugin.name} 删除失败`
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const gotoFinder = () => {

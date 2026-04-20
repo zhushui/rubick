@@ -1,14 +1,7 @@
 'use strict';
-import electron, {
-  app,
-  globalShortcut,
-  protocol,
-  BrowserWindow,
-} from 'electron';
+import electron, { app, globalShortcut, BrowserWindow } from 'electron';
 import { main, guide } from './browsers';
 import commonConst from '../common/utils/commonConst';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
 import API from './common/api';
 import createTray from './common/tray';
 import registerHotKey from './common/registerHotKey';
@@ -24,16 +17,36 @@ import '../common/utils/localPlugin';
 import checkVersion from './common/versionHandler';
 import registerSystemPlugin from './common/registerSystemPlugin';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const remoteMain = require('@electron/remote/main');
+remoteMain.initialize();
+
+const shouldEnableRemoteForWindow = (window: BrowserWindow) => {
+  const webPreferences = window.webContents.getLastWebPreferences?.() || {};
+  const preloadPath =
+    typeof webPreferences.preload === 'string' ? webPreferences.preload : '';
+
+  return !!(
+    webPreferences.nodeIntegration ||
+    webPreferences.contextIsolation === false ||
+    /rubick-plugins-new[\\/]/i.test(preloadPath)
+  );
+};
+
 class App {
   public windowCreator: { init: () => void; getWindow: () => BrowserWindow };
   private systemPlugins: any;
 
   constructor() {
-    protocol.registerSchemesAsPrivileged([
-      { scheme: 'app', privileges: { secure: true, standard: true } },
-    ]);
     this.windowCreator = main();
-    const gotTheLock = app.requestSingleInstanceLock();
+    app.on('browser-window-created', (_event, createdWindow) => {
+      if (shouldEnableRemoteForWindow(createdWindow)) {
+        remoteMain.enable(createdWindow.webContents);
+      }
+    });
+    const shouldUseSingleInstanceLock = commonConst.production();
+    const gotTheLock =
+      !shouldUseSingleInstanceLock || app.requestSingleInstanceLock();
     if (!gotTheLock) {
       app.quit();
     } else {
@@ -44,8 +57,8 @@ class App {
       this.onQuit();
     }
   }
+
   beforeReady() {
-    // 系统托盘
     if (commonConst.macOS()) {
       macBeforeOpen();
       if (commonConst.production() && !app.isInApplicationsFolder()) {
@@ -61,6 +74,7 @@ class App {
   createWindow() {
     this.windowCreator.init();
   }
+
   onReady() {
     const readyFunction = async () => {
       checkVersion();
@@ -74,11 +88,11 @@ class App {
       this.createWindow();
       const mainWindow = this.windowCreator.getWindow();
       API.init(mainWindow);
-      createTray(this.windowCreator.getWindow());
-      registerHotKey(this.windowCreator.getWindow());
+      createTray(mainWindow);
+      registerHotKey(mainWindow);
       this.systemPlugins.triggerReadyHooks(
         Object.assign(electron, {
-          mainWindow: this.windowCreator.getWindow(),
+          mainWindow,
           API,
         })
       );
@@ -91,11 +105,9 @@ class App {
   }
 
   onRunning() {
-    app.on('second-instance', (event, commandLine, workingDirectory) => {
+    app.on('second-instance', (_event, commandLine, workingDirectory) => {
       const files = getSearchFiles(commandLine, workingDirectory);
       const win = this.windowCreator.getWindow();
-      // 当运行第二个实例时,将会聚焦到myWindow这个窗口
-      // 如果有文件列表作为参数，说明是命令行启动
       if (win) {
         if (win.isMinimized()) {
           win.restore();
@@ -112,9 +124,6 @@ class App {
         this.createWindow();
       }
     });
-    if (commonConst.windows()) {
-      // app.setAppUserModelId(pkg.build.appId)
-    }
   }
 
   onQuit() {

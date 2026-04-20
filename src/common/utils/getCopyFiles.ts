@@ -3,7 +3,6 @@ import { clipboard } from 'electron';
 import plist from 'plist';
 import fs from 'fs';
 import path from 'path';
-import ofs from 'original-fs';
 
 export default function getCopyFiles(): Array<any> | null {
   let fileInfo;
@@ -39,7 +38,7 @@ export default function getCopyFiles(): Array<any> | null {
       if (!fs.existsSync(p)) return false;
       let info;
       try {
-        info = ofs.lstatSync(p);
+        info = fs.lstatSync(p);
       } catch (e) {
         return false;
       }

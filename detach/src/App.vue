@@ -1,7 +1,7 @@
 <template>
-  <div :class="[process.platform, 'detach']">
+  <div :class="[platform, 'detach']">
     <div class="info">
-      <img :src="plugInfo.logo"/>
+      <img :src="plugInfo.logo" />
       <input
         autofocus
         @input="changeValue"
@@ -15,7 +15,7 @@
       <div class="handle">
         <div class="devtool" @click="openDevTool" title="开发者工具"></div>
       </div>
-      <div class="window-handle" v-if="process.platform !== 'darwin'">
+      <div class="window-handle" v-if="platform !== 'darwin'">
         <div class="minimize" @click="minimize"></div>
         <div class="maximize" @click="maximize"></div>
         <div class="close" @click="close"></div>
@@ -28,9 +28,7 @@
 import throttle from 'lodash.throttle';
 import { ref } from 'vue';
 
-const { ipcRenderer } = window.require('electron');
-
-const process = window.require('process');
+const platform = window.detachBridge.platform;
 const showInput = ref(false);
 
 const storeInfo = localStorage.getItem('rubick-system-detach') || '{}';
@@ -51,28 +49,25 @@ try {
 }
 
 const changeValue = throttle((e) => {
-  ipcRenderer.send('msg-trigger', {
-    type: 'detachInputChange',
-    data: {
-      text: e.target.value,
-    },
+  window.detachBridge.sendMessage('detachInputChange', {
+    text: e.target.value,
   });
 }, 500);
 
 const openDevTool = () => {
-  ipcRenderer.send('msg-trigger', { type: 'openPluginDevTools' });
+  window.detachBridge.sendMessage('openPluginDevTools');
 };
 
 const minimize = () => {
-  ipcRenderer.send('detach:service', { type: 'minimize' });
+  window.detachBridge.sendService('minimize');
 };
 
 const maximize = () => {
-  ipcRenderer.send('detach:service', { type: 'maximize' });
+  window.detachBridge.sendService('maximize');
 };
 
 const close = () => {
-  ipcRenderer.send('detach:service', { type: 'close' });
+  window.detachBridge.sendService('close');
 };
 
 Object.assign(window, {
@@ -98,7 +93,7 @@ window.leaveFullScreenTrigger = () => {
 };
 
 window.maximizeTrigger = () => {
-  const btnMaximize = document.querySelector('.maximize')
+  const btnMaximize = document.querySelector('.maximize');
   if (!btnMaximize || btnMaximize.classList.contains('unmaximize')) return;
   btnMaximize.classList.add('unmaximize');
 };
@@ -109,31 +104,33 @@ window.unmaximizeTrigger = () => {
   btnMaximize.classList.remove('unmaximize');
 };
 
-if (process.platform === 'darwin') {
+if (platform === 'darwin') {
   window.onkeydown = (e) => {
     if (e.code === 'Escape') {
-      ipcRenderer.send('detach:service', { type: 'endFullScreen' });
+      window.detachBridge.sendService('endFullScreen');
       return;
     }
     if (e.metaKey && (e.code === 'KeyW' || e.code === 'KeyQ')) {
-      window.handle.close()
+      close();
     }
-  }
+  };
 } else {
   window.onkeydown = (e) => {
     if (e.ctrlKey && e.code === 'KeyW') {
-      window.handle.close()
-      return
+      close();
+      return;
     }
-  }
+  };
 }
 </script>
 
 <style>
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, "PingFang SC", "Helvetica Neue", "Microsoft Yahei", sans-serif;
+  font-family: system-ui, 'PingFang SC', 'Helvetica Neue', 'Microsoft Yahei',
+    sans-serif;
   user-select: none;
   overflow: hidden;
 }
@@ -214,7 +211,7 @@ html, body {
 }
 
 .handle .devtool {
-  background: center no-repeat url("./assets/tool.svg")
+  background: center no-repeat url('./assets/tool.svg');
 }
 
 .handle-container {
@@ -239,24 +236,23 @@ html, body {
 }
 
 .window-handle .minimize {
-  background: center / 20px no-repeat url("./assets/minimize.svg");
+  background: center / 20px no-repeat url('./assets/minimize.svg');
 }
 
 .window-handle .maximize {
-  background: center / 20px no-repeat url("./assets/maximize.svg");
+  background: center / 20px no-repeat url('./assets/maximize.svg');
 }
 
 .window-handle .unmaximize {
-  background: center / 20px no-repeat url("./assets/unmaximize.svg");
+  background: center / 20px no-repeat url('./assets/unmaximize.svg');
 }
 
 .window-handle .close {
-  background: center / 20px no-repeat url("./assets/close.svg");
+  background: center / 20px no-repeat url('./assets/close.svg');
 }
 
 .window-handle .close:hover {
   background-color: #e53935 !important;
-  background-image: url("./assets/close-hover.svg") !important;
+  background-image: url('./assets/close-hover.svg') !important;
 }
-
 </style>

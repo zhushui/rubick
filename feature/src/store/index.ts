@@ -1,110 +1,151 @@
-import { createStore } from 'vuex';
+import { createPinia, defineStore } from 'pinia';
 import request from '@/assets/request';
 
 const isDownload = (item: Market.Plugin, targets: any[]) => {
-  let isDownload = false;
+  let downloaded = false;
   targets.some((plugin) => {
     if (plugin.name === item.name) {
-      isDownload = true;
+      downloaded = true;
     }
-    return isDownload;
+    return downloaded;
   });
-  return isDownload;
+  return downloaded;
 };
+
 const LOCAL_PLUGIN_JSON = 'localPluginJson';
-export default createStore({
-  state: {
-    totalPlugins: [],
-    localPlugins: [],
+
+const parseLocalPlugins = (rawValue: unknown) => {
+  if (typeof rawValue !== 'string' || !rawValue.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('[feature-market:local-plugin-json]', error);
+    return [];
+  }
+};
+
+const pinia = createPinia();
+
+export const useFeatureStore = defineStore('feature', {
+  state: () => ({
+    totalPlugins: [] as any[],
+    localPlugins: [] as any[],
     searchValue: '',
-    active: ['finder'],
-  },
-  mutations: {
-    commonUpdate(state: any, payload) {
+    active: ['finder'] as string[],
+  }),
+  actions: {
+    commonUpdate(payload) {
       Object.keys(payload).forEach((key) => {
-        state[key] = payload[key];
+        this[key] = payload[key];
       });
     },
-    setSearchValue(state: any, payload) {
-      state.searchValue = payload;
+    setSearchValue(payload) {
+      this.searchValue = payload;
     },
-  },
-  actions: {
-    async saveLocalPlugins({ dispatch, state }, plugins) {
-      // 先移除
-      window.rubick.db.remove(LOCAL_PLUGIN_JSON);
-      window.rubick.db.put({
+    async saveLocalPlugins(plugins) {
+      await window.rubick.db.remove(LOCAL_PLUGIN_JSON);
+      await window.rubick.db.put({
         _id: LOCAL_PLUGIN_JSON,
         data: JSON.stringify(plugins),
       });
-      await dispatch('init');
+      await this.init();
     },
-    async deleteLocalPlugins({ dispatch, state }) {
-      // 先移除
-      window.rubick.db.remove(LOCAL_PLUGIN_JSON);
-      await dispatch('init');
+    async deleteLocalPlugins() {
+      await window.rubick.db.remove(LOCAL_PLUGIN_JSON);
+      await this.init();
     },
-    async init({ commit }) {
-      const tPlugins = await request.getTotalPlugins();
-      const lTPlugins = window.rubick.db.get(LOCAL_PLUGIN_JSON);
-      const totalPlugins = tPlugins.concat(JSON.parse(lTPlugins?.data || '[]'));
+    async init() {
+      let totalPluginList = [];
+      let localPluginJson = null;
+      let localPlugins = [];
 
-      const localPlugins = window.market.getLocalPlugins();
+      try {
+        totalPluginList = await request.getTotalPlugins();
+      } catch (error) {
+        console.error('[feature-market:total-plugins]', error);
+      }
+
+      try {
+        localPluginJson = await window.rubick.db.get(LOCAL_PLUGIN_JSON);
+      } catch (error) {
+        console.error('[feature-market:db-local-plugins]', error);
+      }
+
+      try {
+        localPlugins = window.market.getLocalPlugins();
+      } catch (error) {
+        console.error('[feature-market:get-local-plugins]', error);
+      }
+
+      const totalPlugins = totalPluginList.concat(
+        parseLocalPlugins(localPluginJson?.data)
+      );
 
       totalPlugins.forEach((origin: Market.Plugin) => {
         origin.isdownload = isDownload(origin, localPlugins);
         origin.isloading = false;
       });
-      // 修复卸载失败，一直转圈的问题。
+
       localPlugins.forEach((origin: Market.Plugin) => {
         origin.isloading = false;
       });
 
-      commit('commonUpdate', {
+      this.commonUpdate({
         localPlugins,
         totalPlugins,
       });
     },
-    startDownload({ commit, state }, name) {
-      const totalPlugins = JSON.parse(JSON.stringify(state.totalPlugins));
+    startDownload(name) {
+      const totalPlugins = JSON.parse(JSON.stringify(this.totalPlugins));
       totalPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
           origin.isloading = true;
         }
       });
-      commit('commonUpdate', {
+      this.commonUpdate({
         totalPlugins,
       });
     },
-
-    startUnDownload({ commit, state }, name) {
+    errorDownload(name) {
+      const totalPlugins = JSON.parse(JSON.stringify(this.totalPlugins));
+      totalPlugins.forEach((origin: Market.Plugin) => {
+        if (origin.name === name) {
+          origin.isloading = false;
+        }
+      });
+      this.commonUpdate({
+        totalPlugins,
+      });
+    },
+    startUnDownload(name) {
       const localPlugins = window.market.getLocalPlugins();
       localPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
           origin.isloading = true;
         }
       });
-      commit('commonUpdate', {
+      this.commonUpdate({
         localPlugins,
       });
     },
-
-    errorUnDownload({ commit, state }, name) {
+    errorUnDownload(name) {
       const localPlugins = window.market.getLocalPlugins();
-      // 修复卸载失败，一直转圈的问题。
       localPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
           origin.isloading = false;
         }
       });
 
-      commit('commonUpdate', {
+      this.commonUpdate({
         localPlugins,
       });
     },
-
-    successDownload({ commit, state }, name) {
-      const totalPlugins = JSON.parse(JSON.stringify(state.totalPlugins));
+    successDownload(name) {
+      const totalPlugins = JSON.parse(JSON.stringify(this.totalPlugins));
       totalPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
           origin.isloading = false;
@@ -113,26 +154,38 @@ export default createStore({
       });
       const localPlugins = window.market.getLocalPlugins();
 
-      commit('commonUpdate', {
+      this.commonUpdate({
         totalPlugins,
         localPlugins,
       });
     },
+    async updateLocalPlugin() {
+      let localPlugins = [];
+      let totalPlugins = [];
 
-    async updateLocalPlugin({ commit }) {
-      const localPlugins = window.market.getLocalPlugins();
-      const totalPlugins = await request.getTotalPlugins();
+      try {
+        localPlugins = window.market.getLocalPlugins();
+      } catch (error) {
+        console.error('[feature-market:update-local-plugins]', error);
+      }
+
+      try {
+        totalPlugins = await request.getTotalPlugins();
+      } catch (error) {
+        console.error('[feature-market:update-total-plugins]', error);
+      }
 
       totalPlugins.forEach((origin: Market.Plugin) => {
         origin.isdownload = isDownload(origin, localPlugins);
         origin.isloading = false;
       });
 
-      commit('commonUpdate', {
+      this.commonUpdate({
         localPlugins,
         totalPlugins,
       });
     },
   },
-  modules: {},
 });
+
+export default pinia;

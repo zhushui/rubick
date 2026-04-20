@@ -25,6 +25,7 @@ import {
   Upload,
   Result,
   Spin,
+  Tag,
 } from 'ant-design-vue';
 import App from './App.vue';
 import router from './router';
@@ -34,26 +35,47 @@ import 'ant-design-vue/dist/antd.variable.min.css';
 import registerI18n from './languages/i18n';
 import localConfig from './confOp';
 
-const config: any = localConfig.getConfig();
-
-// 暗夜模式
-if (config.perf.common.darkMode) {
-  document.body.classList.add('dark');
-  window.rubick.theme = 'dark';
-}
-
-ConfigProvider.config({
-  theme: config.perf.custom || {},
+window.addEventListener('error', (event) => {
+  console.error(
+    '[feature-renderer:error]',
+    event.error?.stack || event.message || event.filename
+  );
 });
 
-window.rubick.changeTheme = () => {
-  const config: any = localConfig.getConfig();
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[feature-renderer:unhandledrejection]', event.reason);
+});
+
+const config: any = localConfig.getConfig();
+
+const applyTheme = () => {
+  const currentConfig: any = localConfig.getConfig() || {};
   ConfigProvider.config({
-    theme: config.perf.custom || {},
+    theme: currentConfig?.perf?.custom || {},
   });
 };
 
-createApp(App)
+window.setRubickThemeMode = (mode: 'dark' | 'light') => {
+  document.body.classList.toggle('dark', mode === 'dark');
+};
+
+window.changeRubickTheme = () => {
+  applyTheme();
+};
+
+if (config?.perf?.common?.darkMode) {
+  window.setRubickThemeMode('dark');
+}
+
+applyTheme();
+
+const app = createApp(App);
+
+app.config.errorHandler = (error, _instance, info) => {
+  console.error('[feature-renderer:vue]', info, error);
+};
+
+app
   .use(registerI18n)
   .use(store)
   .use(Button)
@@ -76,9 +98,12 @@ createApp(App)
   .use(Modal)
   .use(Result)
   .use(Spin)
+  .use(Tag)
   .use(Upload)
   .use(Popconfirm)
   .use(Typography)
   .use(router)
   .use(Vue3Lottie)
   .mount('#app');
+
+console.log('[feature-renderer] mounted');

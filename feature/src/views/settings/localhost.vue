@@ -48,7 +48,7 @@
   </a-form>
 </template>
 <script lang="ts" setup>
-import { ref, toRaw } from 'vue';
+import { onMounted, ref, toRaw } from 'vue';
 import { message } from 'ant-design-vue';
 
 let _rev: any;
@@ -59,15 +59,20 @@ let defaultConfig = {
   access_token: '',
 };
 
-try {
-  const dbdata = window.rubick.db.get('rubick-localhost-config');
-  defaultConfig = dbdata.data;
-  _rev = dbdata._rev;
-} catch (e) {
-  // ignore
-}
-
 const formState = ref(JSON.parse(JSON.stringify(defaultConfig)));
+
+onMounted(async () => {
+  try {
+    const dbdata = await window.rubick.db.get('rubick-localhost-config');
+    if (dbdata?.data) {
+      defaultConfig = dbdata.data;
+      _rev = dbdata._rev;
+      formState.value = JSON.parse(JSON.stringify(defaultConfig));
+    }
+  } catch {
+    // ignore
+  }
+});
 
 const rules = {
   register: [{ required: true, trigger: 'change' }],
@@ -86,7 +91,7 @@ const resetForm = () => {
   };
 };
 
-const submit = () => {
+const submit = async () => {
   const changeData: any = {
     _id: 'rubick-localhost-config',
     data: toRaw(formState.value),
@@ -96,7 +101,7 @@ const submit = () => {
     changeData._rev = _rev;
   }
 
-  window.rubick.db.put(changeData);
+  await window.rubick.db.put(changeData);
   message.success('设置成功！重启插件市场后生效！');
 };
 </script>

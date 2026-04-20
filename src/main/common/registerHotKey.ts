@@ -2,7 +2,6 @@ import {
   globalShortcut,
   nativeTheme,
   BrowserWindow,
-  BrowserView,
   ipcMain,
   app,
   Notification,
@@ -10,10 +9,11 @@ import {
 import screenCapture from '@/core/screen-capture';
 import localConfig from '@/main/common/initLocalConfig';
 import winPosition from './getWinPosition';
-import { uIOhook, UiohookKey } from 'uiohook-napi';
+import { registerDoubleModifierShortcut } from './native/uiohook';
+import executeJavaScriptSafely from './executeJavaScriptSafely';
+import { getAttachedManagedViews } from './managedView';
 
 const registerHotKey = (mainWindow: BrowserWindow): void => {
-  // 设置开机启动
   const setAutoLogin = async () => {
     const config = await localConfig.getConfig();
     if (app.getLoginItemSettings().openAtLogin !== config.perf.common.start) {
@@ -25,47 +25,57 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
   };
 
   const setTheme = async () => {
-    mainWindow.webContents.executeJavaScript(`window.rubick.changeTheme()`);
-    mainWindow.getBrowserViews().forEach((view: BrowserView) => {
-      view.webContents.executeJavaScript(`window.rubick.changeTheme()`);
+    executeJavaScriptSafely(
+      mainWindow.webContents,
+      `window.changeRubickTheme && window.changeRubickTheme()`
+    );
+    getAttachedManagedViews(mainWindow).forEach((view) => {
+      executeJavaScriptSafely(
+        view.webContents,
+        `window.changeRubickTheme && window.changeRubickTheme()`
+      );
     });
   };
 
-  // 设置暗黑模式
   const setDarkMode = async () => {
     const config = await localConfig.getConfig();
     const isDark = config.perf.common.darkMode;
     if (isDark) {
       nativeTheme.themeSource = 'dark';
-      mainWindow.webContents.executeJavaScript(
-        `document.body.classList.add("dark");window.rubick.theme="dark"`
+      executeJavaScriptSafely(
+        mainWindow.webContents,
+        `window.setRubickThemeMode ? window.setRubickThemeMode("dark") : document.body.classList.add("dark")`
       );
-      mainWindow.getBrowserViews().forEach((view: BrowserView) => {
-        view.webContents.executeJavaScript(
-          `document.body.classList.add("dark");window.rubick.theme="dark"`
+      getAttachedManagedViews(mainWindow).forEach((view) => {
+        executeJavaScriptSafely(
+          view.webContents,
+          `window.setRubickThemeMode ? window.setRubickThemeMode("dark") : document.body.classList.add("dark")`
         );
       });
-    } else {
-      nativeTheme.themeSource = 'light';
-      mainWindow.webContents.executeJavaScript(
-        `document.body.classList.remove("dark");window.rubick.theme="light"`
-      );
-      mainWindow.getBrowserViews().forEach((view: BrowserView) => {
-        view.webContents.executeJavaScript(
-          `document.body.classList.remove("dark");window.rubick.theme="light"`
-        );
-      });
+      return;
     }
+
+    nativeTheme.themeSource = 'light';
+    executeJavaScriptSafely(
+      mainWindow.webContents,
+      `window.setRubickThemeMode ? window.setRubickThemeMode("light") : document.body.classList.remove("dark")`
+    );
+    getAttachedManagedViews(mainWindow).forEach((view) => {
+      executeJavaScriptSafely(
+        view.webContents,
+        `window.setRubickThemeMode ? window.setRubickThemeMode("light") : document.body.classList.remove("dark")`
+      );
+    });
   };
 
-  // 显示主窗口
-  function mainWindowPopUp() {
+  const mainWindowPopUp = () => {
     const currentShow = mainWindow.isVisible() && mainWindow.isFocused();
     if (currentShow) {
-      mainWindow.blur(); // 先失去焦点，使焦点恢复到之前的应用程序
+      mainWindow.blur();
       mainWindow.hide();
       return;
     }
+
     const { x: wx, y: wy } = winPosition.getPosition();
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -75,49 +85,56 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
     });
     mainWindow.setPosition(wx, wy);
     mainWindow.show();
-  }
+  };
 
   const init = async () => {
     await setAutoLogin();
     await setDarkMode();
     await setTheme();
+
     const config = await localConfig.getConfig();
     globalShortcut.unregisterAll();
 
-    // 注册偏好快捷键
-    // 处理显示/隐藏快捷键的注册
-    const doublePressShortcuts = ['Ctrl+Ctrl', 'Option+Option', 'Shift+Shift', 'Command+Command'];
-    const isDoublePressShortcut = doublePressShortcuts.includes(config.perf.shortCut.showAndHidden);
-    
-    if (isDoublePressShortcut) {
-      // 双击快捷键（如 Ctrl+Ctrl）详见 uIOhookRegister 函数实现
-    } else {
-      // 注册普通快捷键（如 Ctrl+Space、F8 等）
+    const doublePressShortcuts = [
+      'Ctrl+Ctrl',
+      'Option+Option',
+      'Shift+Shift',
+      'Command+Command',
+    ];
+    const isDoublePressShortcut = doublePressShortcuts.includes(
+      config.perf.shortCut.showAndHidden
+    );
+
+    if (!isDoublePressShortcut) {
       globalShortcut.register(config.perf.shortCut.showAndHidden, () => {
         mainWindowPopUp();
       });
     }
 
-    // 截图快捷键
     globalShortcut.register(config.perf.shortCut.capture, () => {
       screenCapture(mainWindow, (data) => {
-        data &&
-          new Notification({
-            title: '截图完成',
-            body: '截图已存储到系统剪贴板中',
-          }).show();
+        if (!data) {
+          return;
+        }
+
+        new Notification({
+          title: '截图完成',
+          body: '截图已存储到系统剪贴板中',
+        }).show();
       });
     });
 
     globalShortcut.register(config.perf.shortCut.quit, () => {
-      // mainWindow.webContents.send('init-rubick');
-      // mainWindow.show();
+      // reserved
     });
 
-    // 添加局部快捷键监听
     mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.key.toLowerCase() === 'w'
-        && (input.control || input.meta) && !input.alt && !input.shift) {
+      if (
+        input.key.toLowerCase() === 'w' &&
+        (input.control || input.meta) &&
+        !input.alt &&
+        !input.shift
+      ) {
         event.preventDefault();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.hide();
@@ -125,56 +142,19 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
       }
     });
 
-    // 注册自定义全局快捷键
-    config.global.forEach((sc) => {
-      if (!sc.key || !sc.value) return;
-      globalShortcut.register(sc.key, () => {
-        mainWindow.webContents.send('global-short-key', sc.value);
+    config.global.forEach((shortcut) => {
+      if (!shortcut.key || !shortcut.value) return;
+      globalShortcut.register(shortcut.key, () => {
+        mainWindow.webContents.send('global-short-key', shortcut.value);
       });
     });
   };
 
-  uIOhookRegister(mainWindowPopUp);
+  registerDoubleModifierShortcut(mainWindowPopUp);
   init();
   ipcMain.on('re-register', () => {
     init();
   });
 };
+
 export default registerHotKey;
-
-function uIOhookRegister(callback: () => void) {
-  let lastModifierPress = Date.now();
-  uIOhook.on('keydown', async (uio_event) => {
-    const config = await localConfig.getConfig(); // 此处还有优化空间
-
-    if (
-      ![
-        'Ctrl+Ctrl',
-        'Option+Option',
-        'Shift+Shift',
-        'Command+Command',
-      ].includes(config.perf.shortCut.showAndHidden)
-    ) {
-      return;
-    }
-
-    // 双击快捷键，如 Ctrl+Ctrl
-    const modifers = config.perf.shortCut.showAndHidden.split('+');
-    const showAndHiddenKeyStr = modifers.pop(); // Ctrl
-    const keyStr2uioKeyCode = {
-      Ctrl: UiohookKey.Ctrl,
-      Shift: UiohookKey.Shift,
-      Option: UiohookKey.Alt,
-      Command: UiohookKey.Comma,
-    };
-
-    if (uio_event.keycode === keyStr2uioKeyCode[showAndHiddenKeyStr]) {
-      const currentTime = Date.now();
-      if (currentTime - lastModifierPress < 300) {
-        callback(); // 调用 mainWindowPopUp
-      }
-      lastModifierPress = currentTime;
-    }
-  });
-  uIOhook.start();
-}

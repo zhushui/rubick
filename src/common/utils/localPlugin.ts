@@ -6,9 +6,9 @@ import API from '@/main/common/api';
 
 const configPath = path.join(baseDir, './rubick-local-plugin.json');
 
-let registry;
-let pluginInstance;
-(async () => {
+let pluginInstancePromise: Promise<PluginHandler> | null = null;
+
+const createPluginInstance = async () => {
   try {
     const res = await API.dbGet({
       data: {
@@ -16,25 +16,34 @@ let pluginInstance;
       },
     });
 
-    registry = res && res.data.register;
-    pluginInstance = new PluginHandler({
+    return new PluginHandler({
       baseDir,
-      registry,
+      registry: res?.data?.register,
     });
-  } catch (e) {
-    pluginInstance = new PluginHandler({
+  } catch {
+    return new PluginHandler({
       baseDir,
-      registry,
     });
   }
-})();
+};
+
+const getPluginInstance = async () => {
+  if (!pluginInstancePromise) {
+    pluginInstancePromise = createPluginInstance().catch((error) => {
+      pluginInstancePromise = null;
+      throw error;
+    });
+  }
+
+  return pluginInstancePromise;
+};
 
 global.LOCAL_PLUGINS = {
   PLUGINS: [],
   async downloadPlugin(plugin) {
+    const pluginInstance = await getPluginInstance();
     await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
     if (plugin.isDev) {
-      // 获取 dev 插件信息
       const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
       const pluginInfo = JSON.parse(
         fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
@@ -45,10 +54,9 @@ global.LOCAL_PLUGINS = {
       };
     }
     global.LOCAL_PLUGINS.addPlugin(plugin);
-    return global.LOCAL_PLUGINS.PLUGINS;
+    return true;
   },
   refreshPlugin(plugin) {
-    // 获取 dev 插件信息
     const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
     const pluginInfo = JSON.parse(
       fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
@@ -57,7 +65,6 @@ global.LOCAL_PLUGINS = {
       ...plugin,
       ...pluginInfo,
     };
-    // 刷新
     let currentPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
 
     currentPlugins = currentPlugins.map((p) => {
@@ -67,10 +74,9 @@ global.LOCAL_PLUGINS = {
       return p;
     });
 
-    // 存入
     global.LOCAL_PLUGINS.PLUGINS = currentPlugins;
     fs.writeFileSync(configPath, JSON.stringify(currentPlugins));
-    return global.LOCAL_PLUGINS.PLUGINS;
+    return true;
   },
   getLocalPlugins() {
     try {
@@ -80,7 +86,7 @@ global.LOCAL_PLUGINS = {
         );
       }
       return global.LOCAL_PLUGINS.PLUGINS;
-    } catch (e) {
+    } catch {
       global.LOCAL_PLUGINS.PLUGINS = [];
       return global.LOCAL_PLUGINS.PLUGINS;
     }
@@ -110,11 +116,12 @@ global.LOCAL_PLUGINS = {
     fs.writeFileSync(configPath, JSON.stringify(global.LOCAL_PLUGINS.PLUGINS));
   },
   async deletePlugin(plugin) {
+    const pluginInstance = await getPluginInstance();
     await pluginInstance.uninstall([plugin.name], { isDev: plugin.isDev });
     global.LOCAL_PLUGINS.PLUGINS = global.LOCAL_PLUGINS.PLUGINS.filter(
       (p) => plugin.name !== p.name
     );
     fs.writeFileSync(configPath, JSON.stringify(global.LOCAL_PLUGINS.PLUGINS));
-    return global.LOCAL_PLUGINS.PLUGINS;
+    return true;
   },
 };

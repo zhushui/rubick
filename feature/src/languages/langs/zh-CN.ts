@@ -100,6 +100,9 @@ export default {
         },
         localstart: {
           title: '本地启动',
+          dropHint: '可拖放文件或文件夹到这里加入启动项，也可以点击这里手动选择',
+          remove: '移除',
+          missing: '文件不存在',
         },
         database: {
           title: '多端数据同步',

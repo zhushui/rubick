@@ -17,7 +17,7 @@
         <a-form-item :label="$t('feature.dev.pluginName')" name="name">
           <a-input v-model:value="formState.name" />
         </a-form-item>
-    
+
         <a-form-item :wrapper-col="{ span: 14, offset: 4 }">
           <a-button :loading="loading" type="primary" @click="onSubmit">
             {{ $t('feature.dev.install') }}
@@ -34,6 +34,7 @@
 <script setup>
 import { reactive, ref } from 'vue';
 import { message } from 'ant-design-vue';
+import { toBridgePayload } from '@/utils/bridge';
 import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 
@@ -56,19 +57,23 @@ const onSubmit = () => {
 const loading = ref(false);
 const downloadPlugin = async (pluginName) => {
   loading.value = true;
-  await window.market.downloadPlugin({
-    name: pluginName,
-    isDev: true,
-  });
+  await window.market.downloadPlugin(
+    toBridgePayload({
+      name: pluginName,
+      isDev: true,
+    })
+  );
   message.success(t('feature.dev.installSuccess', { pluginName: pluginName }));
   loading.value = false;
 };
 
 const refresh = () => {
   formRef.value.validate().then(() => {
-    window.market.refreshPlugin({
-      name: formState.name,
-    });
+    window.market.refreshPlugin(
+      toBridgePayload({
+        name: formState.name,
+      })
+    );
     message.success(
       t('feature.dev.refreshSuccess', { pluginName: formState.name })
     );
