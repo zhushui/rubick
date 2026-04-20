@@ -1,4 +1,6 @@
-name: Release
+name: "\u53d1\u884c\u7248 (Release)"
+
+run-name: "\u53d1\u884c\u7248 / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
 
 on:
   push:
@@ -11,6 +13,9 @@ on:
         required: true
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: write
 
@@ -20,54 +25,55 @@ concurrency:
 
 jobs:
   build:
-    name: Package (${{ matrix.os }})
+    name: "\u6784\u5efa\u53d1\u5e03\u5305 (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-2022
-            target: --win nsis
+            target: --win nsis --x64 --ia32
             artifact_name: release-windows
             artifact_path: |
               build/*.exe
               build/*.blockmap
               build/latest.yml
           - os: macos-latest
-            target: --mac dmg
+            target: --mac dmg --x64 --arm64
             artifact_name: release-macos
             artifact_path: |
               build/*.dmg
               build/*.blockmap
               build/latest-mac.yml
           - os: ubuntu-latest
-            target: --linux deb
+            target: --linux deb --x64
             artifact_name: release-linux
             artifact_path: build/*.deb
 
     env:
-      ELECTRON_CACHE: ${{ runner.temp }}/electron
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder
-      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-      ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: "\u68c0\u51fa\u4ed3\u5e93"
+        uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.18.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: "\u8bbe\u7f6e Node.js"
+        uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
+          package-manager-cache: false
 
-      - name: Install Linux system dependencies
+      - name: "\u542f\u7528 Corepack \u5e76\u51c6\u5907 pnpm"
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.18.0 --activate
+
+      - name: "\u5207\u6362 CI \u4e0b\u8f7d\u6e90\u4e3a\u5b98\u65b9"
+        run: node scripts/prepare-ci-download-config.cjs
+
+      - name: "\u5b89\u88c5 Linux \u7cfb\u7edf\u4f9d\u8d56"
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -77,23 +83,24 @@ jobs:
             libgtk-3-dev \
             libnotify-dev \
             libnss3 \
+            libxt-dev \
             libxss1 \
             libxtst-dev \
             libasound2t64 \
             libpng++-dev \
             xz-utils
 
-      - name: Install dependencies
+      - name: "\u5b89\u88c5\u4f9d\u8d56"
         run: pnpm install --frozen-lockfile
 
-      - name: Build application
+      - name: "\u6784\u5efa\u5e94\u7528"
         run: pnpm build
 
-      - name: Package release artifacts
+      - name: "\u6253\u5305\u53d1\u5e03\u4ea7\u7269"
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
 
-      - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v4
+      - name: "\u4e0a\u4f20\u53d1\u5e03\u4ea7\u7269"
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
@@ -101,23 +108,77 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish release
+    name: "\u53d1\u5e03\u5230 GitHub Releases"
     needs: build
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
     steps:
-      - name: Download packaged artifacts
-        uses: actions/download-artifact@v4
+      - name: "\u68c0\u51fa\u4ed3\u5e93"
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: "\u540c\u6b65\u8fdc\u7a0b Tag"
+        run: git fetch --force --tags origin
+
+      - name: "\u4e0b\u8f7d\u53d1\u5e03\u4ea7\u7269"
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
           path: release-artifacts
 
-      - name: Create draft GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          draft: true
-          generate_release_notes: true
-          files: release-artifacts/**
+      - name: "\u751f\u6210\u66f4\u65b0\u65e5\u5fd7"
+        run: node scripts/generate-release-notes.cjs
+
+      - name: "\u751f\u6210 Release \u66f4\u65b0\u8f7d\u8377"
+        shell: bash
+        run: |
+          node <<'EOF'
+          const fs = require('fs')
+
+          const payload = {
+            draft: false,
+            prerelease: false,
+            make_latest: 'true',
+            name: process.env.RELEASE_TAG,
+            body: fs.readFileSync('release-notes.generated.md', 'utf8'),
+          }
+
+          fs.writeFileSync(
+            'release-update.json',
+            `${JSON.stringify(payload, null, 2)}\n`,
+            'utf8',
+          )
+          EOF
+
+      - name: "\u53d1\u5e03\u6216\u66f4\u65b0 GitHub Release"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_ids="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id")"
+          release_count="$(printf '%s\n' "$release_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+          if [[ "$release_count" -gt 1 ]]; then
+            while IFS= read -r release_id; do
+              [[ -z "$release_id" ]] && continue
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+            done <<< "$release_ids"
+            release_count=0
+          fi
+
+          if [[ "$release_count" -eq 0 ]]; then
+            args=(release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --verify-tag --notes-file release-notes.generated.md --title "$RELEASE_TAG")
+            gh "${args[@]}" release-artifacts/**
+            exit 0
+          fi
+
+          release_id="$(printf '%s\n' "$release_ids" | sed '/^$/d' | head -n 1)"
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" release-artifacts/** --clobber
+
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            --input release-update.json

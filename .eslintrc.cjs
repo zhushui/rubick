@@ -4,14 +4,18 @@ module.exports = {
     node: true,
     es2022: true,
   },
+  parser: 'vue-eslint-parser',
   extends: [
     'plugin:vue/vue3-essential',
     'eslint:recommended',
-    '@vue/typescript/recommended',
+    'plugin:@typescript-eslint/recommended',
     '@vue/eslint-config-prettier/skip-formatting',
   ],
   parserOptions: {
     ecmaVersion: 'latest',
+    sourceType: 'module',
+    parser: '@typescript-eslint/parser',
+    extraFileExtensions: ['.vue'],
   },
   globals: {
     defineProps: 'readonly',
