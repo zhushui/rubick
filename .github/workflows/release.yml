@@ -1,92 +1,211 @@
 name: '正式发版 (Release)'
 
-run-name: '正式发版 / ${{ github.event_name }} / ${{ github.ref_name }}'
+run-name: '正式发版 / ${{ inputs.version }} / ${{ inputs.source_branch }}'
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
+    inputs:
+      source_branch:
+        description: '已经完成代码审查和 CI 的源分支，例如 feat/example'
+        required: true
+        type: string
+      version:
+        description: '本次正式发布版本号，不带 v 前缀，例如 4.3.8-vite.2'
+        required: true
+        type: string
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   contents: write
+  actions: read
+  pull-requests: read
 
 concurrency:
-  group: release-${{ github.workflow }}-master
-  cancel-in-progress: true
+  group: release-${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
   prepare:
-    name: '校验版本并准备发版'
+    name: '创建 release 分支并校验前置条件'
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.release_meta.outputs.version }}
-      release_tag: ${{ steps.release_meta.outputs.release_tag }}
-      tag_exists: ${{ steps.release_meta.outputs.tag_exists }}
-      master_commit: ${{ steps.release_meta.outputs.master_commit }}
+      source_branch: ${{ steps.prepare.outputs.source_branch }}
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
+      source_ci_run_id: ${{ steps.prepare.outputs.source_ci_run_id }}
+      version: ${{ steps.prepare.outputs.version }}
+      release_branch: ${{ steps.prepare.outputs.release_branch }}
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      release_sha: ${{ steps.prepare.outputs.release_sha }}
+      master_sha: ${{ steps.prepare.outputs.master_sha }}
 
     steps:
-      - name: '检出仓库'
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: '同步远端 master 与 Tag'
-        run: |
-          git fetch --force origin master:refs/remotes/origin/master
-          git fetch --force --tags origin
-
-      - name: '校验当前提交与版本号'
-        id: release_meta
+      - name: '校验发版机器人令牌'
+        env:
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
 
-          current_commit="$(git rev-parse HEAD^{commit})"
-          master_commit="$(git rev-parse refs/remotes/origin/master^{commit})"
-
-          if [[ "$current_commit" != "$master_commit" ]]; then
-            echo "::error title=Invalid release source::正式发版只能基于当前 origin/master HEAD。当前提交=${current_commit}，origin/master=${master_commit}"
+          if [[ -z "${RELEASE_BOT_TOKEN:-}" ]]; then
+            echo "::error title=Missing release bot token::未配置 secrets.RELEASE_BOT_TOKEN，无法创建 release 分支、推进 master 或清理失败发布。"
             exit 1
           fi
 
-          version="$(node -p "require('./package.json').version")"
+      - name: '检出仓库'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
 
-          if [[ -z "$version" ]]; then
-            echo "::error title=Missing package version::package.json 中未找到有效的 version。"
+      - name: '同步远端分支与 Tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --prune origin
+          git fetch --force --tags origin
+
+      - name: '校验源分支、CI 与版本信息'
+        id: prepare
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=Invalid release version::输入版本号 ${RELEASE_VERSION} 不符合约定格式。"
             exit 1
           fi
 
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error title=Invalid package version::package.json version=${version} 不符合约定版本格式。"
+          if ! git rev-parse -q --verify "refs/remotes/origin/${SOURCE_BRANCH}^{commit}" >/dev/null; then
+            echo "::error title=Missing source branch::找不到源分支 origin/${SOURCE_BRANCH}。"
             exit 1
           fi
 
-          release_tag="v${version}"
-          tag_exists="false"
+          SOURCE_SHA="$(git rev-parse "refs/remotes/origin/${SOURCE_BRANCH}^{commit}")"
+          MASTER_SHA="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+          RELEASE_BRANCH="release/v${RELEASE_VERSION}"
+          RELEASE_TAG="v${RELEASE_VERSION}"
 
-          if git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" >/dev/null; then
-            tag_exists="true"
-            tag_commit="$(git rev-parse "refs/tags/${release_tag}^{commit}")"
+          if git rev-parse -q --verify "refs/remotes/origin/${RELEASE_BRANCH}^{commit}" >/dev/null; then
+            echo "::error title=Existing release branch::远端已存在 ${RELEASE_BRANCH}。这通常表示上一次正式发版失败后保留了排障分支，请先检查后再重试。"
+            exit 1
+          fi
 
-            if [[ "$tag_commit" != "$master_commit" ]]; then
-              echo "::error title=Version tag already exists::当前 package.json.version=${version} 对应的 Tag ${release_tag} 已存在，但它指向 ${tag_commit} 而不是当前 origin/master HEAD ${master_commit}。请在合并到 master 前更新 package.json.version。"
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+            echo "::error title=Existing release tag::Tag ${RELEASE_TAG} 已存在，不能再次复用同一正式版本号。"
+            exit 1
+          fi
+
+          export SOURCE_SHA
+
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/main.yml/runs" \
+            -f branch="$SOURCE_BRANCH" \
+            -f per_page=100 > ci-runs.json
+
+          SOURCE_CI_RUN_ID="$(node <<'EOF'
+          const fs = require('fs')
+
+          const payload = JSON.parse(fs.readFileSync('ci-runs.json', 'utf8'))
+          const sourceBranch = process.env.SOURCE_BRANCH
+          const sourceSha = process.env.SOURCE_SHA
+
+          const runs = (payload.workflow_runs || [])
+            .filter(
+              (item) =>
+                item.head_branch === sourceBranch &&
+                item.head_sha === sourceSha &&
+                item.status === 'completed'
+            )
+            .sort(
+              (left, right) =>
+                new Date(right.created_at || 0).getTime() -
+                new Date(left.created_at || 0).getTime()
+            )
+
+          const run = runs[0]
+
+          if (!run) {
+            process.stderr.write(
+              `No completed CI run found for ${sourceBranch} @ ${sourceSha}.\n`
+            )
+            process.exit(2)
+          }
+
+          if (run.conclusion !== 'success') {
+            process.stderr.write(
+              `Latest CI run for ${sourceBranch} @ ${sourceSha} concluded with ${run.conclusion}.\n`
+            )
+            process.exit(3)
+          }
+
+          process.stdout.write(String(run.id))
+          EOF
+          )"
+
+          echo "Validated CI run id: ${SOURCE_CI_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch --detach "$SOURCE_SHA"
+          git switch -c "$RELEASE_BRANCH"
+
+          node scripts/set-workspace-version.cjs "$RELEASE_VERSION"
+
+          if [[ -n "$(git status --short)" ]]; then
+            git add package.json feature/package.json tpl/package.json detach/package.json guide/package.json
+            git commit -m "chore(release): prepare v${RELEASE_VERSION}"
+          fi
+
+          RELEASE_SHA="$(git rev-parse HEAD^{commit})"
+
+          mapfile -t changed_files < <(git diff --name-only "${SOURCE_SHA}..${RELEASE_SHA}")
+          allowed_files=(
+            "package.json"
+            "feature/package.json"
+            "tpl/package.json"
+            "detach/package.json"
+            "guide/package.json"
+          )
+
+          for changed_file in "${changed_files[@]}"; do
+            [[ -z "$changed_file" ]] && continue
+
+            allowed=false
+            for allowed_file in "${allowed_files[@]}"; do
+              if [[ "$changed_file" == "$allowed_file" ]]; then
+                allowed=true
+                break
+              fi
+            done
+
+            if [[ "$allowed" != true ]]; then
+              echo "::error title=Unexpected release branch diff::自动创建的 ${RELEASE_BRANCH} 只允许修改版本文件，但检测到额外文件 ${changed_file}。"
               exit 1
             fi
-          fi
+          done
+
+          git push origin "HEAD:refs/heads/${RELEASE_BRANCH}"
 
           {
-            echo "version=${version}"
-            echo "release_tag=${release_tag}"
-            echo "tag_exists=${tag_exists}"
-            echo "master_commit=${master_commit}"
+            echo "source_branch=${SOURCE_BRANCH}"
+            echo "source_sha=${SOURCE_SHA}"
+            echo "source_ci_run_id=${SOURCE_CI_RUN_ID}"
+            echo "version=${RELEASE_VERSION}"
+            echo "release_branch=${RELEASE_BRANCH}"
+            echo "release_tag=${RELEASE_TAG}"
+            echo "release_sha=${RELEASE_SHA}"
+            echo "master_sha=${MASTER_SHA}"
           } >> "$GITHUB_OUTPUT"
 
   build:
-    name: '构建发布包 (${{ matrix.os }})'
+    name: '正式构建 (${{ matrix.os }})'
     needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
@@ -118,8 +237,12 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
-      - name: '检出仓库'
+      - name: '检出 release 分支提交'
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
 
       - name: '设置 Node.js'
         uses: actions/setup-node@v6
@@ -158,7 +281,7 @@ jobs:
       - name: '构建应用'
         run: pnpm build
 
-      - name: '打包发布产物'
+      - name: '打包正式产物'
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
 
       - name: '上传发布产物'
@@ -169,67 +292,66 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish:
-    name: '创建 Tag 并发布 GitHub Release'
+  publish_draft:
+    name: '创建草稿 Release'
     needs:
       - prepare
       - build
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      RELEASE_BRANCH: ${{ needs.prepare.outputs.release_branch }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
       RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-      EXPECTED_MASTER_COMMIT: ${{ needs.prepare.outputs.master_commit }}
+      ORIGINAL_MASTER_SHA: ${{ needs.prepare.outputs.master_sha }}
 
     steps:
-      - name: '检出仓库'
+      - name: '检出 release 分支提交'
         uses: actions/checkout@v6
         with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
 
-      - name: '同步远端 master 与 Tag'
-        run: |
-          git fetch --force origin master:refs/remotes/origin/master
-          git fetch --force --tags origin
-
-      - name: '确认 master 未在构建期间推进'
+      - name: '同步远端 master、release 分支与 Tag'
         shell: bash
         run: |
           set -euo pipefail
 
-          current_commit="$(git rev-parse HEAD^{commit})"
-          latest_master_commit="$(git rev-parse refs/remotes/origin/master^{commit})"
+          git fetch --force --prune origin
+          git fetch --force --tags origin
 
-          if [[ "$current_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
-            echo "::error title=Unexpected checkout state::当前工作流检出的提交 ${current_commit} 与预期发版提交 ${EXPECTED_MASTER_COMMIT} 不一致。"
+      - name: '确认 master 和 release 分支未变更'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_master_sha="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+          current_release_sha="$(git rev-parse "refs/remotes/origin/${RELEASE_BRANCH}^{commit}")"
+
+          if [[ "$current_master_sha" != "$ORIGINAL_MASTER_SHA" ]]; then
+            echo "::error title=master advanced during release::检测到 master 已从 ${ORIGINAL_MASTER_SHA} 推进到 ${current_master_sha}，当前发版已终止。"
             exit 1
           fi
 
-          if [[ "$latest_master_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
-            echo "::error title=master advanced during release::检测到 master 已推进到 ${latest_master_commit}，而本次构建基于旧提交 ${EXPECTED_MASTER_COMMIT}。为避免发布与源码不一致，当前发版已终止。"
+          if [[ "$current_release_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error title=Release branch changed::release 分支 ${RELEASE_BRANCH} 已被改动，不再等于预期提交 ${RELEASE_SHA}。"
             exit 1
           fi
 
-      - name: '创建或复用正式 Tag'
+      - name: '创建正式 Tag'
         shell: bash
         run: |
           set -euo pipefail
 
           if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
-            tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-
-            if [[ "$tag_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
-              echo "::error title=Version tag mismatch::Tag ${RELEASE_TAG} 已存在，但它指向 ${tag_commit} 而不是当前发版提交 ${EXPECTED_MASTER_COMMIT}。"
-              exit 1
-            fi
-
-            echo "Reusing existing tag ${RELEASE_TAG}."
-            exit 0
+            echo "::error title=Existing release tag::Tag ${RELEASE_TAG} 已存在，当前发版无法继续。"
+            exit 1
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}" "${EXPECTED_MASTER_COMMIT}"
+          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}" "${RELEASE_SHA}"
           git push origin "refs/tags/${RELEASE_TAG}"
 
       - name: '下载发布产物'
@@ -240,30 +362,11 @@ jobs:
           path: release-artifacts
 
       - name: '生成更新日志'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: node scripts/generate-release-notes.cjs
 
-      - name: '生成 Release 更新载荷'
-        shell: bash
-        run: |
-          node <<'EOF'
-          const fs = require('fs')
-
-          const payload = {
-            draft: false,
-            prerelease: false,
-            make_latest: 'true',
-            name: process.env.RELEASE_TAG,
-            body: fs.readFileSync('release-notes.generated.md', 'utf8'),
-          }
-
-          fs.writeFileSync(
-            'release-update.json',
-            `${JSON.stringify(payload, null, 2)}\n`,
-            'utf8',
-          )
-          EOF
-
-      - name: '发布或更新 GitHub Release'
+      - name: '创建草稿 Release'
         shell: bash
         run: |
           set -euo pipefail
@@ -275,27 +378,215 @@ jobs:
             exit 1
           fi
 
-          release_ids="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id")"
-          release_count="$(printf '%s\n' "$release_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
-
-          if [[ "$release_count" -gt 1 ]]; then
-            while IFS= read -r release_id; do
-              [[ -z "$release_id" ]] && continue
-              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
-            done <<< "$release_ids"
-            release_count=0
+          if gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error title=Existing release object::GitHub Releases 中已存在 ${RELEASE_TAG}，当前发版无法继续。"
+            exit 1
           fi
 
-          if [[ "$release_count" -eq 0 ]]; then
-            gh release create "$RELEASE_TAG" \
-              -R "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --notes-file release-notes.generated.md \
-              --title "$RELEASE_TAG" \
-              "${asset_files[@]}"
-            exit 0
+          gh release create "$RELEASE_TAG" \
+            -R "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.generated.md \
+            "${asset_files[@]}"
+
+  promote:
+    name: '推进 master 到正式发布提交'
+    needs:
+      - prepare
+      - publish_draft
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      RELEASE_BRANCH: ${{ needs.prepare.outputs.release_branch }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+      ORIGINAL_MASTER_SHA: ${{ needs.prepare.outputs.master_sha }}
+
+    steps:
+      - name: '检出仓库'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - name: '同步远端 master 与 release 分支'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --prune origin
+
+      - name: '校验推进前状态'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_master_sha="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+          current_release_sha="$(git rev-parse "refs/remotes/origin/${RELEASE_BRANCH}^{commit}")"
+
+          if [[ "$current_master_sha" != "$ORIGINAL_MASTER_SHA" ]]; then
+            echo "::error title=master changed before promotion::master 已从 ${ORIGINAL_MASTER_SHA} 变为 ${current_master_sha}，为避免覆盖他人更新，本次发版已终止。"
+            exit 1
           fi
 
-          release_id="$(printf '%s\n' "$release_ids" | sed '/^$/d' | head -n 1)"
-          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" "${asset_files[@]}" --clobber
-          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input release-update.json
+          if [[ "$current_release_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error title=Release branch changed before promotion::release 分支 ${RELEASE_BRANCH} 已变更，不再等于预期提交 ${RELEASE_SHA}。"
+            exit 1
+          fi
+
+      - name: '快进推进 master'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git push origin "${RELEASE_SHA}:refs/heads/master"
+
+  finalize:
+    name: '发布正式 Release'
+    needs:
+      - prepare
+      - promote
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: '检出仓库'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - name: '生成正式 Release 更新载荷'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin
+
+          node scripts/generate-release-notes.cjs
+
+          node <<'EOF'
+          const fs = require('fs')
+
+          const publishPayload = {
+            draft: false,
+            prerelease: false,
+            name: process.env.RELEASE_TAG,
+            body: fs.readFileSync('release-notes.generated.md', 'utf8'),
+          }
+
+          fs.writeFileSync(
+            'release-publish.json',
+            `${JSON.stringify(publishPayload, null, 2)}\n`,
+            'utf8',
+          )
+
+          const latestPayload = {
+            make_latest: 'true',
+          }
+
+          fs.writeFileSync(
+            'release-latest.json',
+            `${JSON.stringify(latestPayload, null, 2)}\n`,
+            'utf8',
+          )
+          EOF
+
+      - name: '将草稿 Release 转为正式发布并设为最新稳定版'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+
+          if [[ -z "$release_id" ]]; then
+            echo "::error title=Missing draft release::未找到草稿 Release ${RELEASE_TAG}。"
+            exit 1
+          fi
+
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input release-publish.json
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input release-latest.json
+
+  rollback_or_cleanup:
+    name: '失败清理与回滚'
+    if: ${{ always() }}
+    needs:
+      - prepare
+      - build
+      - publish_draft
+      - promote
+      - finalize
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      RELEASE_BRANCH: ${{ needs.prepare.outputs.release_branch }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+      ORIGINAL_MASTER_SHA: ${{ needs.prepare.outputs.master_sha }}
+
+    steps:
+      - name: '检出仓库'
+        if: ${{ needs.prepare.result == 'success' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - name: '处理失败场景'
+        if: ${{ needs.prepare.result == 'success' && (needs.build.result == 'failure' || needs.publish_draft.result == 'failure' || needs.promote.result == 'failure' || needs.finalize.result == 'failure') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --prune origin
+          git fetch --force --tags origin
+
+          if gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --yes
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+            git push origin ":refs/tags/${RELEASE_TAG}"
+          fi
+
+          if [[ "${{ needs.promote.result }}" == "success" && "${{ needs.finalize.result }}" != "success" ]]; then
+            current_master_sha="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+
+            if [[ "$current_master_sha" == "$RELEASE_SHA" && -n "$ORIGINAL_MASTER_SHA" ]]; then
+              git push --force-with-lease=refs/heads/master:${current_master_sha} origin "${ORIGINAL_MASTER_SHA}:refs/heads/master"
+            fi
+          fi
+
+  cleanup_success:
+    name: '清理成功发布的 release 分支'
+    if: ${{ needs.prepare.result == 'success' && needs.build.result == 'success' && needs.publish_draft.result == 'success' && needs.promote.result == 'success' && needs.finalize.result == 'success' }}
+    needs:
+      - prepare
+      - build
+      - publish_draft
+      - promote
+      - finalize
+      - rollback_or_cleanup
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      RELEASE_BRANCH: ${{ needs.prepare.outputs.release_branch }}
+
+    steps:
+      - name: '检出仓库'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - name: '删除远端 release 分支'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git push origin ":refs/heads/${RELEASE_BRANCH}"

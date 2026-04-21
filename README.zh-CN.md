@@ -28,13 +28,13 @@
 ## 当前 fork 的主要变化
 
 - 工程现代化：
-  迁移到 `pnpm workspace`、多入口 `Vite` 和 `tsup`，并清理历史 Vue CLI 残留与旧锁文件。
+  迁移到 `pnpm workspace`、多入口 `Vite` 和 `tsup`，并清理历史 Vue CLI 残留与旧锁文件
 - 更安全的 Electron 运行时：
-  主应用与内置页面改为桥接访问受控 API，默认启用 `contextIsolation: true` 和 `nodeIntegration: false`。
+  主应用与内置页面改为桥接访问受控 API，默认启用 `contextIsolation: true` 和 `nodeIntegration: false`
 - 迁移后的打包链路梳理：
-  修正运行时资源路径、相对资源加载、子应用 CSP 和 Lottie 打包方式，使其与新构建链一致。
+  修正运行时资源路径、相对资源加载、子应用 CSP 和 Lottie 打包方式，使其与新构建链一致
 - 面向用户的交互与兼容修复：
-  包含插件兼容预加载、主窗口交互细节、本地启动项处理和 Windows 宿主文件集成适配。
+  包含插件兼容预加载、主窗口交互细节、本地启动项处理和 Windows 宿主文件集成适配
 
 ## 兼容性与边界
 
@@ -49,12 +49,13 @@
 
 ## 分支与发版规则
 
-- `master` 保持为默认分支、稳定分支和唯一正式发版来源分支
+- `master` 保持为默认分支、稳定分支和公开发行主线
 - 日常开发从最新 `master` 拉短分支，例如 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`
-- `package.json.version` 是正式版本号的唯一来源
-- PR 合并到 `master` 后，GitHub Actions 会在当前 `master` HEAD 上自动创建对应 Tag，并在同一工作流里构建和更新 GitHub Release
-- 如果同名版本 Tag 已存在但不指向当前 `master` HEAD，发版会直接失败，必须先提升版本号
-- 未打 Tag 的分支代码不代表正式发行版；已发布版本请以 GitHub Releases 和 Tag 为准
+- 业务分支上的 Pull Request 负责代码审查与 `持续集成 (CI)`
+- 正式发版通过手动触发 `正式发版 (Release)` 工作流完成
+- 工作流会自动创建 `release/v<version>` 分支、统一改写版本号、构建产物、生成正式 Tag，并在成功后推进 `master`
+- 失败时会自动清理 Tag 与 Draft Release，但保留 `release/*` 分支用于排障
+- 已发布版本请以 GitHub Releases 和 Tag 为准
 
 ## 文档
 
@@ -74,7 +75,7 @@ pnpm package
 ```
 
 - Node 基线：`>=20`
-- 当前 CI 验证基线：Node `24`
+- 当前 CI 与发版工作流基线：Node `24`
 - `pnpm install` 会自动补齐 Electron 运行时并重建 Electron 相关原生依赖
 - `pnpm package:dir` 是当前 fork 在 CI 中使用的 smoke package 命令
 
@@ -95,7 +96,8 @@ pnpm package
 ## 反馈与贡献
 
 - fork 相关问题、维护建议和改进请求，请优先提交到本仓库的 [Issues](https://github.com/zhushui/rubick/issues) 或 Pull Requests
-- 面向 `master` 的合并默认意味着“可以立刻正式发布”，因此请优先在短分支中完成开发和验证
+- 业务分支的 PR 主要承担代码审查与基础 CI，不代表会立刻正式发版
+- 准备公开发布时，请使用 `正式发版 (Release)` 工作流，而不是手工改 Tag 或直接在 `master` 上累积待发布改动
 - 如果问题在上游原版 Rubick 中也能稳定复现，仍建议同步反馈到上游
 - 欢迎提交文档改进、插件兼容修复、打包修复和测试增强相关贡献
 

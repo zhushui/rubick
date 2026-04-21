@@ -3,10 +3,6 @@ name: "\u6301\u7eed\u96c6\u6210 (CI)"
 run-name: "\u6301\u7eed\u96c6\u6210 / ${{ github.event_name }} / ${{ github.head_ref || github.ref_name }}"
 
 on:
-  push:
-    branches:
-      - master
-      - main
   pull_request:
     branches:
       - master
@@ -14,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   contents: read
@@ -38,7 +34,7 @@ jobs:
     env:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
       - name: "\u68c0\u51fa\u4ed3\u5e93"
