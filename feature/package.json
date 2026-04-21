@@ -1,6 +1,6 @@
 {
   "name": "@rubick/feature",
-  "version": "4.3.8-vite.1",
+  "version": "4.3.8-vite.2",
   "private": true,
   "scripts": {
     "dev": "vite --config vite.config.ts --host 127.0.0.1 --port 5174",
