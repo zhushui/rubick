@@ -3,6 +3,7 @@ import fs from 'fs';
 import { PluginHandler } from '@/core';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
+import { repairPluginWorkspacePackages } from '@/core/plugin-handler/npmAdapter';
 
 const configPath = path.join(baseDir, './rubick-local-plugin.json');
 const manifestDecoders = ['utf-8', 'gbk', 'utf-16le'];
@@ -133,6 +134,7 @@ global.LOCAL_PLUGINS = {
   },
   getLocalPlugins() {
     try {
+      repairPluginWorkspacePackages(baseDir);
       if (!global.LOCAL_PLUGINS.PLUGINS.length) {
         const cachedPlugins = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
         const normalizedPlugins = Array.isArray(cachedPlugins)

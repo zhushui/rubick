@@ -11,6 +11,7 @@ import axios from 'axios';
 import {
   createPluginInstaller,
   ensurePluginWorkspaceManifest,
+  repairPluginWorkspacePackages,
 } from './npmAdapter';
 
 fixPath();
@@ -23,6 +24,7 @@ class AdapterHandler {
 
   constructor(options: AdapterHandlerOptions) {
     ensurePluginWorkspaceManifest(options.baseDir);
+    repairPluginWorkspacePackages(options.baseDir);
     this.baseDir = options.baseDir;
 
     let register = options.registry || 'https://registry.npmmirror.com';
@@ -137,6 +139,7 @@ class AdapterHandler {
 
       npm.on('close', (code: number) => {
         if (!code) {
+          repairPluginWorkspacePackages(this.baseDir);
           resolve({ code: 0, data: output });
           return;
         }

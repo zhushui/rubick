@@ -48,9 +48,11 @@ import {
 import {
   disableOleWindowFileDrop,
   enableOleWindowFileDrop,
+  type OleDropEvent,
 } from './windowsOleDrop';
 import { WINDOW_HEIGHT } from '@/common/constans/common';
 import getWindowsExplorerCurrentFolderPath from './windowsExplorerPath';
+import executeJavaScriptSafely from './executeJavaScriptSafely';
 
 const sanitizeInputFiles = (input: unknown): string[] => {
   const candidates = Array.isArray(input)
@@ -152,9 +154,17 @@ const buildHookDispatchScript = (hook: string, data?: unknown) =>
     typeof data === 'undefined' ? '' : `, ${JSON.stringify(data)}`
   })`;
 
+const buildSyntheticFileDropScript = (payload: {
+  phase: OleDropEvent['phase'];
+  files: string[];
+  point?: { x: number; y: number };
+}) => `window.rubick?.__dispatchSyntheticFileDrop?.(${JSON.stringify(payload)})`;
+
 class API extends DBInstance {
   private hostFileDropEnabled = false;
   private hostFileDropRetryTimers = new Set<NodeJS.Timeout>();
+  private syntheticPluginDropActive = false;
+  private syntheticPluginDropWindowId: number | null = null;
 
   init(mainWindow: BrowserWindow) {
     const handleRequest = (event, arg) => {
@@ -249,23 +259,33 @@ class API extends DBInstance {
     return senderWindow || hostWindow || focusedWindow || detachInstance.getWindow() || window;
   };
 
+  private getHostPluginView(window?: BrowserWindow) {
+    if (runnerInstance.getView() && hasLiveViewContents(runnerInstance.getView())) {
+      return runnerInstance.getView();
+    }
+
+    if (!isWindowUsable(window)) {
+      return undefined;
+    }
+
+    return getAttachedManagedViews(window).find(hasLiveViewContents);
+  }
+
   private getActivePluginView(window?: BrowserWindow, e?: any) {
-    const activeRunnerView = runnerInstance.getView();
-    if (hasLiveViewContents(activeRunnerView)) {
-      return activeRunnerView;
+    const currentWindow = this.getCurrentWindow(window, e);
+    const currentWindowView = this.getHostPluginView(currentWindow);
+    if (currentWindowView) {
+      return currentWindowView;
     }
 
     const candidateWindows = [
-      this.getCurrentWindow(window, e),
       detachInstance.getWindow(),
       BrowserWindow.getFocusedWindow(),
       mainInstance.windowCreator?.getWindow?.(),
     ].filter(isWindowUsable);
 
     for (const candidateWindow of candidateWindows) {
-      const attachedView = getAttachedManagedViews(candidateWindow).find(
-        hasLiveViewContents
-      );
+      const attachedView = this.getHostPluginView(candidateWindow);
       if (attachedView) {
         return attachedView;
       }
@@ -296,6 +316,141 @@ class API extends DBInstance {
       buildHookDispatchScript(hook, data)
     );
     return true;
+  }
+
+  private resetSyntheticPluginDrop(windowId?: number) {
+    if (
+      typeof windowId === 'number' &&
+      this.syntheticPluginDropWindowId !== null &&
+      this.syntheticPluginDropWindowId !== windowId
+    ) {
+      return;
+    }
+
+    this.syntheticPluginDropActive = false;
+    this.syntheticPluginDropWindowId = null;
+  }
+
+  private getPluginDropPoint(
+    originWindow: BrowserWindow,
+    targetView: any,
+    screenPoint?: { x?: number; y?: number }
+  ) {
+    if (
+      !screenPoint ||
+      !Number.isFinite(Number(screenPoint.x)) ||
+      !Number.isFinite(Number(screenPoint.y)) ||
+      typeof targetView?.getBounds !== 'function'
+    ) {
+      return undefined;
+    }
+
+    try {
+      const windowBounds = originWindow.getContentBounds();
+      const viewBounds = targetView.getBounds();
+      const localPoint = {
+        x: Math.round(Number(screenPoint.x) - windowBounds.x - viewBounds.x),
+        y: Math.round(Number(screenPoint.y) - windowBounds.y - viewBounds.y),
+      };
+
+      if (
+        localPoint.x < 0 ||
+        localPoint.y < 0 ||
+        localPoint.x >= Number(viewBounds.width || 0) ||
+        localPoint.y >= Number(viewBounds.height || 0)
+      ) {
+        return undefined;
+      }
+
+      return localPoint;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private dispatchSyntheticPluginFileDrop(
+    originWindow: BrowserWindow,
+    event: OleDropEvent
+  ) {
+    const targetView = this.getHostPluginView(originWindow);
+    if (!hasLiveViewContents(targetView)) {
+      this.resetSyntheticPluginDrop(originWindow.id);
+      return false;
+    }
+
+    const point = this.getPluginDropPoint(originWindow, targetView, event.point);
+    const sendDropEvent = (
+      phase: OleDropEvent['phase'],
+      targetPoint?: { x: number; y: number }
+    ) => {
+      void executeJavaScriptSafely(
+        targetView.webContents,
+        buildSyntheticFileDropScript({
+          phase,
+          files: Array.isArray(event.files) ? event.files.filter(Boolean) : [],
+          point: targetPoint,
+        })
+      );
+    };
+
+    if (event.phase === 'drag-leave') {
+      if (
+        this.syntheticPluginDropActive &&
+        this.syntheticPluginDropWindowId === originWindow.id
+      ) {
+        sendDropEvent('drag-leave', point);
+      }
+      this.resetSyntheticPluginDrop(originWindow.id);
+      return false;
+    }
+
+    if (!point) {
+      if (
+        this.syntheticPluginDropActive &&
+        this.syntheticPluginDropWindowId === originWindow.id
+      ) {
+        sendDropEvent('drag-leave');
+      }
+      this.resetSyntheticPluginDrop(originWindow.id);
+      return false;
+    }
+
+    sendDropEvent(event.phase, point);
+
+    if (event.phase === 'drop') {
+      this.resetSyntheticPluginDrop(originWindow.id);
+    } else {
+      this.syntheticPluginDropActive = true;
+      this.syntheticPluginDropWindowId = originWindow.id;
+    }
+
+    return true;
+  }
+
+  private syncOleWindowFileDrop(originWindow: BrowserWindow) {
+    if (!isWindowUsable(originWindow)) {
+      return false;
+    }
+
+    const targetView = this.getHostPluginView(originWindow);
+    const shouldHandleGenericPluginDrop =
+      !this.hostFileDropEnabled &&
+      hasLiveViewContents(targetView) &&
+      this.currentPlugin?.name !== 'rubick-system-feature';
+
+    if (!this.hostFileDropEnabled && !shouldHandleGenericPluginDrop) {
+      this.resetSyntheticPluginDrop(originWindow.id);
+      disableOleWindowFileDrop(originWindow);
+      return false;
+    }
+
+    return enableOleWindowFileDrop(originWindow, (event) => {
+      if (this.hostFileDropEnabled) {
+        return hostDropOverlay.handleOleEvent(originWindow, event);
+      }
+
+      return this.dispatchSyntheticPluginFileDrop(originWindow, event);
+    });
   }
 
   public __EscapeKeyDown = (_event, input, window) => {
@@ -350,6 +505,7 @@ class API extends DBInstance {
     }
     runnerInstance.init(plugin, window);
     this.currentPlugin = plugin;
+    this.syncOleWindowFileDrop(window);
     window.webContents.executeJavaScript(
       `window.setCurrentPlugin(${JSON.stringify({
         currentPlugin: this.currentPlugin,
@@ -369,6 +525,7 @@ class API extends DBInstance {
     this.hostFileDropRetryTimers.forEach((timer) => clearTimeout(timer));
     this.hostFileDropRetryTimers.clear();
     this.hostFileDropEnabled = false;
+    this.resetSyntheticPluginDrop(window?.id);
     setWindowFileDropEnabled(window, false);
     disableChildWindowFileDrop(window);
     disableOleWindowFileDrop(window);
@@ -418,13 +575,7 @@ class API extends DBInstance {
     );
 
     if (this.hostFileDropEnabled) {
-      try {
-        enableOleWindowFileDrop(originWindow, (event) =>
-          hostDropOverlay.handleOleEvent(originWindow, event)
-        );
-      } catch (error) {
-        console.error('[host-file-drop:ole-register:error]', error);
-      }
+      this.syncOleWindowFileDrop(originWindow);
 
       const attachChildDrop = () =>
         enableChildWindowFileDrop(originWindow, (files) => {
@@ -447,8 +598,8 @@ class API extends DBInstance {
       });
     } else {
       disableChildWindowFileDrop(originWindow);
-      disableOleWindowFileDrop(originWindow);
       hostDropOverlay.hide();
+      this.syncOleWindowFileDrop(originWindow);
     }
     return enabled;
   }
@@ -747,17 +898,25 @@ class API extends DBInstance {
     const view = runnerInstance.takeView(window);
     if (!view) return;
     window.webContents.executeJavaScript(`window.getMainInputInfo()`).then((res) => {
-      detachInstance.init(
-        {
-          ...this.currentPlugin,
-          subInput: res,
-        },
-        window.getBounds(),
-        view
-      );
+      void detachInstance
+        .init(
+          {
+            ...this.currentPlugin,
+            subInput: res,
+          },
+          window.getBounds(),
+          view
+        )
+        .then(() => {
+          const detachWindow = detachInstance.getWindow();
+          if (detachWindow) {
+            this.syncOleWindowFileDrop(detachWindow);
+          }
+        });
       window.webContents.executeJavaScript(`window.initRubick()`);
       window.setSize(window.getSize()[0], 60);
       this.currentPlugin = null;
+      this.syncOleWindowFileDrop(window);
     });
   }
 

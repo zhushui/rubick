@@ -319,6 +319,154 @@ const runLegacyUBrowser = async ({
   }
 };
 
+const createSyntheticFileFromPath = (filePath) => {
+  const fileName = path.basename(filePath || '') || 'file';
+  let file;
+
+  try {
+    file = new File([''], fileName);
+  } catch {
+    file = new Blob(['']);
+    Object.defineProperty(file, 'name', {
+      configurable: true,
+      enumerable: true,
+      value: fileName,
+    });
+  }
+
+  Object.defineProperty(file, 'path', {
+    configurable: true,
+    enumerable: false,
+    value: filePath,
+  });
+
+  return file;
+};
+
+const createSyntheticDataTransfer = (filePaths = []) => {
+  const files = filePaths
+    .filter((filePath) => typeof filePath === 'string' && filePath)
+    .map((filePath) => createSyntheticFileFromPath(filePath));
+
+  try {
+    const dataTransfer = new DataTransfer();
+    files.forEach((file) => {
+      try {
+        dataTransfer.items.add(file);
+      } catch {
+        // ignore synthetic files rejected by the runtime
+      }
+    });
+    return dataTransfer;
+  } catch {
+    return {
+      files,
+      items: files.map((file) => ({
+        kind: 'file',
+        type: file.type || '',
+        getAsFile: () => file,
+      })),
+      types: files.length ? ['Files'] : [],
+      dropEffect: 'copy',
+      effectAllowed: 'all',
+    };
+  }
+};
+
+const createSyntheticDragEvent = (type, point, dataTransfer) => {
+  const clientX = Number(point?.x || 0);
+  const clientY = Number(point?.y || 0);
+
+  try {
+    return new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX,
+      clientY,
+      screenX: clientX,
+      screenY: clientY,
+      dataTransfer,
+    });
+  } catch {
+    const event = new Event(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    });
+
+    Object.defineProperties(event, {
+      dataTransfer: {
+        configurable: true,
+        enumerable: false,
+        value: dataTransfer,
+      },
+      clientX: {
+        configurable: true,
+        enumerable: false,
+        value: clientX,
+      },
+      clientY: {
+        configurable: true,
+        enumerable: false,
+        value: clientY,
+      },
+      screenX: {
+        configurable: true,
+        enumerable: false,
+        value: clientX,
+      },
+      screenY: {
+        configurable: true,
+        enumerable: false,
+        value: clientY,
+      },
+    });
+
+    return event;
+  }
+};
+
+const dispatchSyntheticFileDrop = ({ phase, files = [], point }) => {
+  const eventType =
+    phase === 'drag-enter'
+      ? 'dragenter'
+      : phase === 'drag-over'
+      ? 'dragover'
+      : phase === 'drag-leave'
+      ? 'dragleave'
+      : phase === 'drop'
+      ? 'drop'
+      : '';
+
+  if (!eventType) {
+    return false;
+  }
+
+  const target =
+    (point ? document.elementFromPoint(point.x, point.y) : null) ||
+    window.__rubickSyntheticDropTarget ||
+    document.body;
+
+  if (!target) {
+    return false;
+  }
+
+  if (phase === 'drag-enter' || phase === 'drag-over') {
+    window.__rubickSyntheticDropTarget = target;
+  }
+
+  const dataTransfer = createSyntheticDataTransfer(files);
+  const event = createSyntheticDragEvent(eventType, point, dataTransfer);
+  target.dispatchEvent(event);
+
+  if (phase === 'drag-leave' || phase === 'drop') {
+    window.__rubickSyntheticDropTarget = null;
+  }
+
+  return true;
+};
+
 const createLegacyUBrowserTask = (initialUrl = '') => {
   const state = {
     url: initialUrl,
@@ -376,6 +524,9 @@ window.rubick = {
   hooks,
   __dispatchHook(name, payload) {
     dispatchHook(name, payload);
+  },
+  __dispatchSyntheticFileDrop(payload) {
+    return dispatchSyntheticFileDrop(payload || {});
   },
   onPluginEnter(cb) {
     registerHook('onPluginEnter', cb);
