@@ -12,4 +12,9 @@ interface Window {
     send: (channel: string, payload: unknown) => void;
   };
   exports: Record<string, any>;
+  __tplRouteContext?: {
+    code?: string;
+    type?: string;
+    payload?: unknown;
+  };
 }

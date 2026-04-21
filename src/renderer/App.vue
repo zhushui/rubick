@@ -22,7 +22,7 @@
       :currentPlugin="currentPlugin"
       :searchValue="searchValue"
       :currentSelect="currentSelect"
-      :options="options"
+      :options="visibleOptions"
       :clipboardFile="clipboardFile || []"
       @setPluginHistory="setPluginHistory"
       @choosePlugin="choosePlugin"
@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { watch, ref, toRaw, onMounted } from 'vue';
+import { watch, ref, toRaw, onMounted, computed } from 'vue';
 import Result from './components/result.vue';
 import Search from './components/search.vue';
 import getWindowHeight from '../common/utils/getWindowHeight';
@@ -64,12 +64,33 @@ const {
 
 const currentSelect = ref(0);
 const HISTORY_GRID_COLUMNS = 8;
+const MAX_VISIBLE_OPTIONS = 20;
 type Direction = 'up' | 'down' | 'left' | 'right';
 const menuPluginInfo: any = ref({
   features: [{ code: 'settings' }],
 });
 
 const config: any = ref(localConfig.getConfig());
+
+const getVisibleOptions = (items: any[] = []) =>
+  [...items]
+    .sort((prev, next) => {
+      const scoreDiff = (next?.zIndex || 0) - (prev?.zIndex || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const prevName = String(prev?.name || '');
+      const nextName = String(next?.name || '');
+      if (prevName.length !== nextName.length) {
+        return prevName.length - nextName.length;
+      }
+
+      return prevName.localeCompare(nextName, 'zh-CN');
+    })
+    .slice(0, MAX_VISIBLE_OPTIONS);
+
+const visibleOptions = computed(() => getVisibleOptions(options.value));
 
 const syncBuiltinPlugin = () => {
   try {
@@ -89,12 +110,12 @@ const syncWindowHeight = () => {
   try {
     const showEmptyState =
       !!String(searchValue.value || '').trim() &&
-      !options.value.length &&
+      !visibleOptions.value.length &&
       !(clipboardFile.value || []).length;
 
     window.rubick.setExpendHeight(
       getWindowHeight(
-        options.value,
+        visibleOptions.value,
         pluginLoading.value || !config.value.perf.common.history
           ? []
           : pluginHistory.value,
@@ -107,7 +128,7 @@ const syncWindowHeight = () => {
 };
 
 watch(
-  [options, pluginHistory, currentPlugin],
+  [visibleOptions, pluginHistory, currentPlugin],
   () => {
     currentSelect.value = 0;
     if (currentPlugin.value.name) return;
@@ -123,11 +144,11 @@ onMounted(async () => {
 
 const changeIndex = (index) => {
   const showHistory =
-    !options.value.length &&
+    !visibleOptions.value.length &&
     !String(searchValue.value || '').trim() &&
     !(clipboardFile.value || []).length &&
     config.value.perf.common.history;
-  const len = options.value.length || pluginHistory.value.length;
+  const len = visibleOptions.value.length || pluginHistory.value.length;
   if (!len) return;
 
   const getNextHistoryIndex = (
@@ -227,8 +248,11 @@ const openMenu = (ext) => {
 window.openRubickMenu = openMenu;
 
 const choosePlugin = (plugin) => {
-  if (options.value.length) {
-    const currentChoose = options.value[currentSelect.value];
+  if (visibleOptions.value.length) {
+    const currentChoose = visibleOptions.value[currentSelect.value];
+    if (!currentChoose) {
+      return;
+    }
     currentChoose.click();
     return;
   }

@@ -5,6 +5,69 @@ import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
 
 const configPath = path.join(baseDir, './rubick-local-plugin.json');
+const manifestDecoders = ['utf-8', 'gbk', 'utf-16le'];
+const getInstalledPluginPath = (pluginName) =>
+  path.resolve(baseDir, 'node_modules', pluginName || '');
+
+const readPluginManifest = (pluginPath) => {
+  const manifestPath = path.join(pluginPath, './package.json');
+  const raw = fs.readFileSync(manifestPath);
+
+  let lastError = null;
+  for (const encoding of manifestDecoders) {
+    try {
+      const text = new TextDecoder(encoding, {
+        fatal: encoding !== 'gbk',
+      })
+        .decode(raw)
+        .replace(/^\uFEFF/, '');
+      return JSON.parse(text);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error(`Unable to parse plugin manifest: ${manifestPath}`);
+};
+
+const resolveInstalledPluginInfo = (plugin) => {
+  const pluginPath = getInstalledPluginPath(plugin?.name);
+  const manifestPath = path.join(pluginPath, './package.json');
+
+  if (!plugin?.name || !fs.existsSync(manifestPath)) {
+    return null;
+  }
+
+  const pluginInfo = readPluginManifest(pluginPath);
+  return {
+    ...plugin,
+    ...pluginInfo,
+    name: pluginInfo?.name || plugin.name,
+  };
+};
+
+const ensureInstalledPluginInfo = (plugin, action = 'install') => {
+  const installedPlugin = resolveInstalledPluginInfo(plugin);
+
+  if (installedPlugin) {
+    return installedPlugin;
+  }
+
+  const pluginLabel = plugin?.pluginName || plugin?.name || 'plugin';
+  throw new Error(
+    `${pluginLabel} ${action}ed but no valid local package was found; skipped writing the installed record`
+  );
+};
+
+const persistLocalPlugins = (plugins) => {
+  global.LOCAL_PLUGINS.PLUGINS = plugins;
+  fs.writeFileSync(configPath, JSON.stringify(plugins));
+  return plugins;
+};
 
 let pluginInstancePromise: Promise<PluginHandler> | null = null;
 
@@ -43,47 +106,41 @@ global.LOCAL_PLUGINS = {
   async downloadPlugin(plugin) {
     const pluginInstance = await getPluginInstance();
     await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
-    if (plugin.isDev) {
-      const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
-      const pluginInfo = JSON.parse(
-        fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
-      );
-      plugin = {
-        ...plugin,
-        ...pluginInfo,
-      };
-    }
-    global.LOCAL_PLUGINS.addPlugin(plugin);
+    const installedPlugin = ensureInstalledPluginInfo(plugin, 'install');
+    global.LOCAL_PLUGINS.addPlugin(installedPlugin);
     return true;
   },
   refreshPlugin(plugin) {
-    const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
-    const pluginInfo = JSON.parse(
-      fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
-    );
-    plugin = {
-      ...plugin,
-      ...pluginInfo,
-    };
     let currentPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
+    const installedPlugin = resolveInstalledPluginInfo(plugin);
+
+    if (!installedPlugin) {
+      persistLocalPlugins(
+        currentPlugins.filter((origin) => origin.name !== plugin?.name)
+      );
+      return false;
+    }
 
     currentPlugins = currentPlugins.map((p) => {
-      if (p.name === plugin.name) {
-        return plugin;
+      if (p.name === installedPlugin.name) {
+        return installedPlugin;
       }
       return p;
     });
 
-    global.LOCAL_PLUGINS.PLUGINS = currentPlugins;
-    fs.writeFileSync(configPath, JSON.stringify(currentPlugins));
+    persistLocalPlugins(currentPlugins);
     return true;
   },
   getLocalPlugins() {
     try {
       if (!global.LOCAL_PLUGINS.PLUGINS.length) {
-        global.LOCAL_PLUGINS.PLUGINS = JSON.parse(
-          fs.readFileSync(configPath, 'utf-8')
-        );
+        const cachedPlugins = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        const normalizedPlugins = Array.isArray(cachedPlugins)
+          ? cachedPlugins
+              .map((plugin) => resolveInstalledPluginInfo(plugin))
+              .filter(Boolean)
+          : [];
+        persistLocalPlugins(normalizedPlugins);
       }
       return global.LOCAL_PLUGINS.PLUGINS;
     } catch {
@@ -100,28 +157,25 @@ global.LOCAL_PLUGINS = {
     });
     if (!has) {
       currentPlugins.unshift(plugin);
-      global.LOCAL_PLUGINS.PLUGINS = currentPlugins;
-      fs.writeFileSync(configPath, JSON.stringify(currentPlugins));
+      persistLocalPlugins(currentPlugins);
     }
   },
   updatePlugin(plugin) {
-    global.LOCAL_PLUGINS.PLUGINS = global.LOCAL_PLUGINS.PLUGINS.map(
-      (origin) => {
+    persistLocalPlugins(
+      global.LOCAL_PLUGINS.PLUGINS.map((origin) => {
         if (origin.name === plugin.name) {
-          return plugin;
+          return resolveInstalledPluginInfo(plugin) || origin;
         }
         return origin;
-      }
+      })
     );
-    fs.writeFileSync(configPath, JSON.stringify(global.LOCAL_PLUGINS.PLUGINS));
   },
   async deletePlugin(plugin) {
     const pluginInstance = await getPluginInstance();
     await pluginInstance.uninstall([plugin.name], { isDev: plugin.isDev });
-    global.LOCAL_PLUGINS.PLUGINS = global.LOCAL_PLUGINS.PLUGINS.filter(
-      (p) => plugin.name !== p.name
+    persistLocalPlugins(
+      global.LOCAL_PLUGINS.PLUGINS.filter((p) => plugin.name !== p.name)
     );
-    fs.writeFileSync(configPath, JSON.stringify(global.LOCAL_PLUGINS.PLUGINS));
     return true;
   },
 };

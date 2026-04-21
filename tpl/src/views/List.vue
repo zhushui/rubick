@@ -26,8 +26,6 @@ const itemHeight = 60;
 const itemMaxNum = 10;
 const defaultHeight = 60;
 
-const { code, type, payload } = route.params;
-const current = window.exports[code];
 window.rubick.setExpendHeight(defaultHeight);
 
 const lists = ref([]);
@@ -38,12 +36,62 @@ watch([lists], () => {
       : itemHeight * lists.value.length;
   window.rubick.setExpendHeight(defaultHeight + height);
 });
-current.args.enter &&
-  current.args.enter({ code: code, type, payload }, (result) => {
-    lists.value = result;
-  });
+
+const decodePayload = (value: unknown) => {
+  if (typeof value !== 'string' || !value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(decodeURIComponent(value));
+  } catch {
+    return null;
+  }
+};
+
+const getRouteContext = () => {
+  const context = window.__tplRouteContext || {};
+  const queryCode = route.query.code;
+  const queryType = route.query.type;
+  const queryPayload = route.query.payload;
+
+  return {
+    code:
+      typeof queryCode === 'string' && queryCode
+        ? queryCode
+        : context.code || '',
+    type:
+      typeof queryType === 'string'
+        ? queryType
+        : context.type || '',
+    payload:
+      decodePayload(queryPayload) ??
+      context.payload ??
+      [],
+  };
+};
+
+const current = ref<any>();
+const pluginContext = ref({
+  code: '',
+  type: '',
+  payload: [] as any,
+});
 
 const currentSelect = ref(0);
+
+const loadCurrentPlugin = () => {
+  const nextContext = getRouteContext();
+  pluginContext.value = nextContext;
+  current.value = nextContext.code ? window.exports?.[nextContext.code] : null;
+  currentSelect.value = 0;
+  lists.value = [];
+
+  current.value?.args?.enter?.(nextContext, (result) => {
+    lists.value = result || [];
+  });
+};
+
 const stopChangeCurrent = window.tplBridge.onChangeCurrent((result) => {
   if (
     currentSelect.value + result > lists.value.length - 1 ||
@@ -53,16 +101,30 @@ const stopChangeCurrent = window.tplBridge.onChangeCurrent((result) => {
   }
   currentSelect.value = currentSelect.value + result;
 });
+
 window.rubick.setSubInput(({ text }) => {
-  current.args.search &&
-    current.args.search({ code, type: '', payload: [] }, text, (result) => {
+  current.value?.args?.search?.(
+    {
+      code: pluginContext.value.code,
+      type: '',
+      payload: [],
+    },
+    text,
+    (result) => {
       lists.value = result || [];
-    });
+    }
+  );
 }, '搜索');
 
 const select = (item) => {
-  current.args.select &&
-    current.args.select({ code, type: '', payload: [] }, item);
+  current.value?.args?.select?.(
+    {
+      code: pluginContext.value.code,
+      type: '',
+      payload: [],
+    },
+    item
+  );
 };
 
 const onKeydownAction = (e) => {
@@ -86,6 +148,7 @@ const onKeydownAction = (e) => {
 };
 
 window.addEventListener('keydown', onKeydownAction);
+watch(() => route.fullPath, loadCurrentPlugin, { immediate: true });
 
 onBeforeUnmount(() => {
   stopChangeCurrent();

@@ -1,4 +1,5 @@
 import { BrowserView, BrowserWindow, session, Session } from 'electron';
+import fs from 'node:fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import commonConst from '../../common/utils/commonConst';
@@ -10,6 +11,7 @@ import {
   WINDOW_WIDTH,
 } from '@/common/constans/common';
 import { getPreloadPath, getSubAppEntry } from '@/main/common/runtimePaths';
+import { ensurePluginCompatPreload } from '@/main/common/pluginCompatPreload';
 import executeJavaScriptSafely from '@/main/common/executeJavaScriptSafely';
 import {
   attachManagedView,
@@ -32,7 +34,7 @@ const toFileSystemPath = (targetPath) => {
 };
 
 const isSecureInternalPlugin = (plugin) =>
-  plugin.name === 'rubick-system-feature' || !plugin.main;
+  plugin.name === 'rubick-system-feature';
 
 const canStayOnInternalEntry = (entryUrl: string, nextUrl: string) => {
   if (!entryUrl || !nextUrl) {
@@ -64,16 +66,29 @@ const canStayOnInternalEntry = (entryUrl: string, nextUrl: string) => {
 const getExternalPreloadPath = (plugin, pluginIndexPath) => {
   const { name, preload, tplPath, indexPath } = plugin;
   if (!preload) return undefined;
-  if (commonConst.dev()) {
+  const resolvedPath = (() => {
+    if (commonConst.dev()) {
+      if (tplPath) {
+        return path.resolve(toFileSystemPath(indexPath), './', preload);
+      }
+      return path.resolve(toFileSystemPath(pluginIndexPath), '../', preload);
+    }
     if (tplPath) {
       return path.resolve(toFileSystemPath(indexPath), './', preload);
     }
     return path.resolve(toFileSystemPath(pluginIndexPath), '../', preload);
+  })();
+
+  return fs.existsSync(resolvedPath) ? resolvedPath : undefined;
+};
+
+const getDevExternalPreloadPath = (pluginPath, preload) => {
+  if (!preload) {
+    return undefined;
   }
-  if (tplPath) {
-    return path.resolve(toFileSystemPath(indexPath), './', preload);
-  }
-  return path.resolve(toFileSystemPath(pluginIndexPath), '../', preload);
+
+  const resolvedPath = path.resolve(pluginPath, preload);
+  return fs.existsSync(resolvedPath) ? resolvedPath : undefined;
 };
 
 const configuredSessions = new WeakSet<Session>();
@@ -226,11 +241,15 @@ export default () => {
     const secureInternalPlugin = isSecureInternalPlugin(plugin);
     let pluginIndexPath = tplPath || indexPath;
     let preloadPath;
+    let originalPluginPreload;
 
-    if (commonConst.dev() && development && !secureInternalPlugin) {
+    if (commonConst.dev() && plugin.isDev && development && !secureInternalPlugin) {
       pluginIndexPath = development;
       const pluginPath = path.resolve(baseDir, 'node_modules', name);
-      preloadPath = path.resolve(pluginPath, plugin.preload || '');
+      originalPluginPreload = getDevExternalPreloadPath(
+        pluginPath,
+        plugin.preload || ''
+      );
     }
 
     if (plugin.name === 'rubick-system-feature' && !pluginIndexPath) {
@@ -252,8 +271,15 @@ export default () => {
     const ses = session.fromPartition(partition);
     configurePluginSession(ses);
     if (!secureInternalPlugin) {
-      ses.setPreloads([getPreloadPath('compat')]);
-      preloadPath = preloadPath || getExternalPreloadPath(plugin, pluginIndexPath);
+      const pluginRoot = path.resolve(baseDir, 'node_modules', name);
+      originalPluginPreload =
+        originalPluginPreload || getExternalPreloadPath(plugin, pluginIndexPath);
+      preloadPath = ensurePluginCompatPreload({
+        pluginName: name,
+        pluginRoot,
+        originalPreload: originalPluginPreload,
+        injectTplBridge: !plugin.main,
+      });
     }
 
     const webPreferences = secureInternalPlugin

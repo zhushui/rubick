@@ -1,9 +1,15 @@
-const { ipcRenderer, shell, screen, webUtils } = require('electron');
-const { BrowserWindow, nativeTheme, app } = require('@electron/remote');
+const electron = require('electron');
+const { ipcRenderer, shell, screen, webUtils } = electron;
+const remote = require('@electron/remote');
+const { BrowserWindow, nativeTheme, app } = remote;
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { fileURLToPath, pathToFileURL } = require('url');
+
+if (!electron.remote) {
+  electron.remote = remote;
+}
 
 const appPath = app.getPath('userData');
 const baseDir = path.join(appPath, './rubick-plugins-new');
@@ -212,6 +218,160 @@ const resolvePreloadPath = (pluginRoot, preloadValue) => {
 
 patchFilePathCompatibility();
 
+const createLegacyUBrowserWaitScript = (selector, timeout) => `new Promise((resolve, reject) => {
+  const selectorValue = ${JSON.stringify(selector)};
+  const timeoutValue = ${Number(timeout) || 30000};
+  const startedAt = Date.now();
+  const tick = () => {
+    try {
+      if (document.querySelector(selectorValue)) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutValue) {
+        reject(new Error('ubrowser wait timeout'));
+        return;
+      }
+      setTimeout(tick, 100);
+    } catch (error) {
+      reject(error);
+    }
+  };
+  tick();
+})`;
+
+const runLegacyUBrowser = async ({
+  url,
+  steps = [],
+  clearStorage = false,
+  show = false,
+  options = {},
+}) => {
+  if (!url || typeof url !== 'string') {
+    return [];
+  }
+
+  const ubrowserWindow = new BrowserWindow({
+    width:
+      typeof options.width === 'number' && options.width > 0
+        ? options.width
+        : 1024,
+    height:
+      typeof options.height === 'number' && options.height > 0
+        ? options.height
+        : 768,
+    show: Boolean(options.show ?? show),
+    useContentSize: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      webSecurity: false,
+      backgroundThrottling: false,
+      contextIsolation: false,
+      nodeIntegration: false,
+      sandbox: false,
+      partition: `rubick-ubrowser-${Date.now()}-${Math.random()
+        .toString(16)
+        .slice(2)}`,
+    },
+  });
+
+  try {
+    await ubrowserWindow.loadURL(url);
+    const results = [];
+
+    for (const step of steps) {
+      if (!step || typeof step !== 'object') {
+        continue;
+      }
+
+      if (step.type === 'wait' && step.selector) {
+        await ubrowserWindow.webContents.executeJavaScript(
+          createLegacyUBrowserWaitScript(step.selector, step.timeout),
+          true
+        );
+        continue;
+      }
+
+      if (step.type === 'evaluate' && step.source) {
+        const value = await ubrowserWindow.webContents.executeJavaScript(
+          `Promise.resolve(${step.source})`,
+          true
+        );
+        results.push(value);
+      }
+    }
+
+    return results;
+  } finally {
+    try {
+      if (!ubrowserWindow.isDestroyed()) {
+        if (clearStorage) {
+          await ubrowserWindow.webContents.session.clearCache().catch(() => undefined);
+          await ubrowserWindow.webContents.session
+            .clearStorageData()
+            .catch(() => undefined);
+        }
+        ubrowserWindow.destroy();
+      }
+    } catch {
+      // ignore cleanup failures for best-effort legacy compatibility
+    }
+  }
+};
+
+const createLegacyUBrowserTask = (initialUrl = '') => {
+  const state = {
+    url: initialUrl,
+    steps: [],
+    clearStorage: false,
+    show: false,
+  };
+
+  const task = {
+    goto(url) {
+      state.url = url;
+      return task;
+    },
+    wait(selector, timeout = 30000) {
+      state.steps.push({
+        type: 'wait',
+        selector,
+        timeout,
+      });
+      return task;
+    },
+    evaluate(fn) {
+      state.steps.push({
+        type: 'evaluate',
+        source:
+          typeof fn === 'function'
+            ? `(${fn.toString()})()`
+            : String(fn || 'undefined'),
+      });
+      return task;
+    },
+    clearCookies() {
+      state.clearStorage = true;
+      return task;
+    },
+    hide() {
+      state.show = false;
+      return task;
+    },
+    run(options = {}) {
+      return runLegacyUBrowser({
+        url: state.url,
+        steps: state.steps,
+        clearStorage: state.clearStorage,
+        show: state.show,
+        options,
+      });
+    },
+  };
+
+  return task;
+};
+
 window.rubick = {
   hooks,
   __dispatchHook(name, payload) {
@@ -302,6 +462,20 @@ window.rubick = {
     const result = ipcSendSync('showSaveDialog', options);
     return result;
   },
+  dialog: {
+    showOpenDialogSync(options) {
+      return ipcSendSync('showOpenDialog', options);
+    },
+    showOpenDialog(options) {
+      return Promise.resolve(ipcSendSync('showOpenDialog', options));
+    },
+    showSaveDialogSync(options) {
+      return ipcSendSync('showSaveDialog', options);
+    },
+    showSaveDialog(options) {
+      return Promise.resolve(ipcSendSync('showSaveDialog', options));
+    },
+  },
   setExpendHeight(height) {
     ipcSendSync('setExpendHeight', height);
   },
@@ -321,8 +495,47 @@ window.rubick = {
       text,
     });
   },
+  subInputFocus() {
+    return ipcSendSync('subInputFocus');
+  },
+  subInputSelect() {
+    return ipcSendSync('subInputSelect');
+  },
   subInputBlur() {
     ipcSendSync('subInputBlur');
+  },
+  startDrag(files) {
+    return ipcSendAsync('startDrag', {
+      file: typeof files === 'string' ? files : undefined,
+      files: Array.isArray(files) ? files : undefined,
+    });
+  },
+  readCurrentFolderPath() {
+    return ipcSendAsync('readCurrentFolderPath');
+  },
+  getCurrentFolderPath() {
+    return ipcSendSync('getCurrentFolderPath');
+  },
+  getCurrentBrowserUrl() {
+    try {
+      return ipcSendSync('getCurrentBrowserUrl');
+    } catch {
+      return '';
+    }
+  },
+  readCurrentBrowserUrl() {
+    return ipcSendAsync('readCurrentBrowserUrl').catch(() => '');
+  },
+  fetchUserServerTemporaryToken() {
+    return Promise.resolve('');
+  },
+  clearUBrowserCache() {
+    return true;
+  },
+  ubrowser: {
+    goto(url) {
+      return createLegacyUBrowserTask(url);
+    },
   },
   getPath(name) {
     return ipcSendSync('getPath', { name });
@@ -433,6 +646,16 @@ window.rubick = {
   removePlugin() {
     ipcSend('removePlugin');
   },
+  openPurchase() {
+    return ipcSendSync('showNotification', {
+      body: 'This build does not support in-app purchase.',
+    });
+  },
+  openPaymentPermanent() {
+    return ipcSendSync('showNotification', {
+      body: 'This build does not support in-app purchase.',
+    });
+  },
   shellShowItemInFolder: (targetPath) => {
     ipcSend('shellShowItemInFolder', { path: targetPath });
   },
@@ -504,3 +727,14 @@ window.rubick = {
     return win;
   },
 };
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.rubick = window.rubick;
+  if (typeof globalThis.utools === 'undefined') {
+    globalThis.utools = window.rubick;
+  }
+}
+
+if (typeof window.utools === 'undefined') {
+  window.utools = window.rubick;
+}

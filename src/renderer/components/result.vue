@@ -39,7 +39,7 @@
         </div>
       </div>
     </div>
-    <a-list v-else item-layout="horizontal" :dataSource="sortedOptions">
+    <a-list v-else item-layout="horizontal" :dataSource="options">
       <template #renderItem="{ item, index }">
         <a-list-item
           @click="() => item.click()"
@@ -154,29 +154,8 @@ const renderDesc = (desc = '') => {
   return desc;
 };
 
-const sort = (options) => {
-  return [...options]
-    .sort((prev, next) => {
-      const scoreDiff = (next?.zIndex || 0) - (prev?.zIndex || 0);
-      if (scoreDiff !== 0) {
-        return scoreDiff;
-      }
-
-      const prevName = String(prev?.name || '');
-      const nextName = String(next?.name || '');
-      if (prevName.length !== nextName.length) {
-        return prevName.length - nextName.length;
-      }
-
-      return prevName.localeCompare(nextName, 'zh-CN');
-    })
-    .slice(0, 20);
-};
-
-const sortedOptions = computed(() => sort(props.options));
-
 watch(
-  [() => props.currentSelect, sortedOptions, showHistory],
+  [() => props.currentSelect, () => props.options, showHistory],
   async () => {
     await nextTick();
 

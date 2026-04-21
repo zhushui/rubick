@@ -267,8 +267,39 @@ const createRubickBridge = () => {
         typeof text === 'string' ? text : text.text ?? text.value ?? '';
       return ipcSendSync('setSubInputValue', { text: nextValue });
     },
+    subInputFocus() {
+      return ipcSendSync('subInputFocus');
+    },
+    subInputSelect() {
+      return ipcSendSync('subInputSelect');
+    },
     subInputBlur() {
       return ipcSendSync('subInputBlur');
+    },
+    startDrag(files: string | string[]) {
+      return ipcSendAsync('startDrag', {
+        file: typeof files === 'string' ? files : undefined,
+        files: Array.isArray(files) ? files : undefined,
+      });
+    },
+    readCurrentFolderPath() {
+      return ipcSendAsync('readCurrentFolderPath');
+    },
+    getCurrentFolderPath() {
+      return ipcSendSync('getCurrentFolderPath');
+    },
+    getCurrentBrowserUrl() {
+      try {
+        return ipcSendSync('getCurrentBrowserUrl');
+      } catch {
+        return '';
+      }
+    },
+    readCurrentBrowserUrl() {
+      return ipcSendAsync('readCurrentBrowserUrl').catch(() => '');
+    },
+    fetchUserServerTemporaryToken() {
+      return Promise.resolve('');
     },
     getPath(name: string) {
       return ipcSendSync('getPath', { name });
@@ -384,6 +415,16 @@ const createRubickBridge = () => {
     },
     removePlugin() {
       return ipcRenderer.send('msg-trigger', { type: 'removePlugin' });
+    },
+    openPurchase() {
+      return ipcSendSync('showNotification', {
+        body: 'This build does not support in-app purchase.',
+      });
+    },
+    openPaymentPermanent() {
+      return ipcSendSync('showNotification', {
+        body: 'This build does not support in-app purchase.',
+      });
     },
     shellShowItemInFolder(targetPath: string) {
       return ipcRenderer.send('msg-trigger', {

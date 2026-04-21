@@ -216,10 +216,14 @@ const hasAdded = (cmd) => {
 
 const openPlugin = ({ cmd, code }) => {
   const targetPlugin = toRaw(pluginDetail.value);
+  const canonicalName = targetPlugin?.originName || targetPlugin?.name;
   const resolvedCmd =
     typeof cmd === 'string' ? cmd : cmd?.label || cmd?.cmd || cmd?.value || '';
+  const targetFeature = Array.isArray(targetPlugin?.features)
+    ? targetPlugin.features.find((item) => item?.code === code) || null
+    : null;
 
-  if (!targetPlugin?.name) {
+  if (!canonicalName) {
     message.warning('当前插件信息尚未准备好，请重试');
     return;
   }
@@ -228,10 +232,13 @@ const openPlugin = ({ cmd, code }) => {
     JSON.parse(
       JSON.stringify({
         ...targetPlugin,
+        name: canonicalName,
+        originName: canonicalName,
+        feature: targetFeature || { code },
         cmd: resolvedCmd,
         ext: {
           code,
-          type: 'text',
+          type: cmd?.type || 'text',
           payload: null,
         },
       })

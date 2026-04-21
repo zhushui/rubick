@@ -50,6 +50,7 @@ import {
   enableOleWindowFileDrop,
 } from './windowsOleDrop';
 import { WINDOW_HEIGHT } from '@/common/constans/common';
+import getWindowsExplorerCurrentFolderPath from './windowsExplorerPath';
 
 const sanitizeInputFiles = (input: unknown): string[] => {
   const candidates = Array.isArray(input)
@@ -68,6 +69,10 @@ const sanitizeInputFiles = (input: unknown): string[] => {
       }
     });
 };
+
+const DEFAULT_DRAG_ICON = nativeImage.createFromDataURL(
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0bQAAAAASUVORK5CYII='
+);
 
 const runnerInstance = runner();
 const detachInstance = detach();
@@ -125,6 +130,27 @@ const buildPluginInfoSubmenu = (plugin: any) => {
     },
   ];
 };
+
+const isWindowUsable = (window: BrowserWindow | null | undefined) => {
+  try {
+    return !!window && !window.isDestroyed();
+  } catch {
+    return false;
+  }
+};
+
+const hasLiveViewContents = (view: any) => {
+  try {
+    return !!view?.webContents && !view.webContents.isDestroyed();
+  } catch {
+    return false;
+  }
+};
+
+const buildHookDispatchScript = (hook: string, data?: unknown) =>
+  `window.rubick?.__dispatchHook?.(${JSON.stringify(hook)}${
+    typeof data === 'undefined' ? '' : `, ${JSON.stringify(data)}`
+  })`;
 
 class API extends DBInstance {
   private hostFileDropEnabled = false;
@@ -222,6 +248,55 @@ class API extends DBInstance {
 
     return senderWindow || hostWindow || focusedWindow || detachInstance.getWindow() || window;
   };
+
+  private getActivePluginView(window?: BrowserWindow, e?: any) {
+    const activeRunnerView = runnerInstance.getView();
+    if (hasLiveViewContents(activeRunnerView)) {
+      return activeRunnerView;
+    }
+
+    const candidateWindows = [
+      this.getCurrentWindow(window, e),
+      detachInstance.getWindow(),
+      BrowserWindow.getFocusedWindow(),
+      mainInstance.windowCreator?.getWindow?.(),
+    ].filter(isWindowUsable);
+
+    for (const candidateWindow of candidateWindows) {
+      const attachedView = getAttachedManagedViews(candidateWindow).find(
+        hasLiveViewContents
+      );
+      if (attachedView) {
+        return attachedView;
+      }
+    }
+
+    return undefined;
+  }
+
+  private executePluginHook(
+    hook: string,
+    data?: unknown,
+    window?: BrowserWindow,
+    e?: any
+  ) {
+    const activeRunnerView = runnerInstance.getView();
+    if (hasLiveViewContents(activeRunnerView)) {
+      runnerInstance.executeHooks(hook, data);
+      return true;
+    }
+
+    const targetView = this.getActivePluginView(window, e);
+    if (!hasLiveViewContents(targetView)) {
+      return false;
+    }
+
+    executeJavaScriptSafely(
+      targetView.webContents,
+      buildHookDispatchScript(hook, data)
+    );
+    return true;
+  }
 
   public __EscapeKeyDown = (_event, input, window) => {
     if (input.type !== 'keyDown') return;
@@ -466,12 +541,30 @@ class API extends DBInstance {
     );
   }
 
-  public subInputBlur() {
-    runnerInstance.getView()?.webContents.focus();
+  public subInputBlur(_arg, window, e) {
+    const targetView = this.getActivePluginView(window, e);
+    targetView?.webContents?.focus();
   }
 
-  public sendSubInputChangeEvent({ data }) {
-    runnerInstance.executeHooks('SubInputChange', data);
+  public subInputFocus(_arg, window, e) {
+    const originWindow = this.getCurrentWindow(window, e);
+    if (!originWindow) return false;
+    void executeJavaScriptSafely(originWindow.webContents, 'window.focusSubInput?.()');
+    return true;
+  }
+
+  public subInputSelect(_arg, window, e) {
+    const originWindow = this.getCurrentWindow(window, e);
+    if (!originWindow) return false;
+    void executeJavaScriptSafely(
+      originWindow.webContents,
+      'window.selectSubInput?.()'
+    );
+    return true;
+  }
+
+  public sendSubInputChangeEvent({ data }, window, e) {
+    return this.executePluginHook('SubInputChange', data, window, e);
   }
 
   public removeSubInput(_data, window, e) {
@@ -488,11 +581,55 @@ class API extends DBInstance {
         value: data.text,
       })})`
     );
-    this.sendSubInputChangeEvent({ data });
+    this.sendSubInputChangeEvent({ data }, window, e);
   }
 
   public getPath({ data }) {
     return app.getPath(data.name);
+  }
+
+  public async startDrag({ data }, _window, event) {
+    const sender = event?.sender;
+    if (!sender || sender.isDestroyed()) {
+      return false;
+    }
+
+    const dragFiles = sanitizeInputFiles(data?.files ?? data?.file);
+    if (!dragFiles.length) {
+      return false;
+    }
+
+    try {
+      const dragIcon =
+        typeof data?.icon === 'string' && data.icon.startsWith('data:image/')
+          ? nativeImage.createFromDataURL(data.icon)
+          : DEFAULT_DRAG_ICON;
+
+      sender.startDrag({
+        file: dragFiles[0],
+        files: dragFiles.length > 1 ? dragFiles : undefined,
+        icon: dragIcon.isEmpty() ? DEFAULT_DRAG_ICON : dragIcon,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async readCurrentFolderPath() {
+    return getWindowsExplorerCurrentFolderPath();
+  }
+
+  public getCurrentFolderPath() {
+    return getWindowsExplorerCurrentFolderPath();
+  }
+
+  public getCurrentBrowserUrl() {
+    return '';
+  }
+
+  public async readCurrentBrowserUrl() {
+    return '';
   }
 
   public showNotification({ data: { body } }) {
@@ -625,7 +762,7 @@ class API extends DBInstance {
   }
 
   public detachInputChange({ data }) {
-    this.sendSubInputChangeEvent({ data });
+    return this.executePluginHook('SubInputChange', data);
   }
 
   public getLocalId() {
