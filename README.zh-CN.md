@@ -9,7 +9,7 @@
   <img alt="累计下载量" src="https://img.shields.io/github/downloads/zhushui/rubick/total" />
   <a href="https://github.com/zhushui/rubick/releases"><img alt="最新版本" src="https://img.shields.io/github/package-json/v/zhushui/rubick" /></a>
   <a href="https://github.com/zhushui/rubick/actions/workflows/main.yml"><img alt="CI 状态" src="https://img.shields.io/github/actions/workflow/status/zhushui/rubick/main.yml?label=ci" /></a>
-  <a href="https://github.com/zhushui/rubick/blob/main/LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/blob/master/LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
   <a href="https://github.com/zhushui/rubick/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/zhushui/rubick?style=social" /></a>
 </div>
 
@@ -46,11 +46,19 @@
 详细说明见：
 
 - [开发说明](./DEVELOPMENT.zh-CN.md)
+- [维护与发版规范](./MAINTAINING.zh-CN.md)
 - [插件运行时兼容说明](./PLUGIN_RUNTIME.zh-CN.md)
 
 ## 下载
 
 - [当前 fork Releases](https://github.com/zhushui/rubick/releases)
+
+## 分支与发版规则
+
+- 默认分支保持为 `master`，它同时承担稳定分支与正式发版来源分支职责。
+- 日常开发请从最新 `master` 拉短分支，例如 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`。
+- 正式版本只允许从当前 `origin/master` 的精确 HEAD 创建并推送 Tag。
+- 未打 Tag 的分支代码不代表正式发行版；已发布版本请以 GitHub Release 页面和 Tag 为准。
 
 ## 仓库开发
 
@@ -86,6 +94,7 @@ pnpm package
 ## 反馈与贡献
 
 - fork 相关问题、维护建议和改进请求，请优先提交到本仓库的 [Issues](https://github.com/zhushui/rubick/issues) 或 Pull Requests。
+- 功能开发、修复和文档调整请优先使用短分支发起指向 `master` 的 Pull Request，而不是直接在 `master` 上堆积未发布改动。
 - 如果问题在上游原版 Rubick 中也能稳定复现，仍然建议同步标注或反馈到上游。
 - 欢迎提交文档改进、插件兼容修复、打包修复和测试增强相关贡献。
 
