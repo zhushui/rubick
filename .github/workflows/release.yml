@@ -1,17 +1,12 @@
-name: "\u53d1\u884c\u7248 (Release)"
+name: '正式发版 (Release)'
 
-run-name: "\u53d1\u884c\u7248 / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+run-name: '正式发版 / ${{ github.event_name }} / ${{ github.ref_name }}'
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - master
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag, for example v4.3.8-vite.1'
-        required: true
-        type: string
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -20,50 +15,79 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-${{ github.workflow }}-master
+  cancel-in-progress: true
 
 jobs:
-  verify_source:
-    name: "\u6821\u9a8c\u53d1\u7248\u6765\u6e90"
+  prepare:
+    name: '校验版本并准备发版'
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    outputs:
+      version: ${{ steps.release_meta.outputs.version }}
+      release_tag: ${{ steps.release_meta.outputs.release_tag }}
+      tag_exists: ${{ steps.release_meta.outputs.tag_exists }}
+      master_commit: ${{ steps.release_meta.outputs.master_commit }}
 
     steps:
-      - name: "\u68c0\u51fa\u4ed3\u5e93"
+      - name: '检出仓库'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: "\u540c\u6b65\u8fdc\u7a0b master \u4e0e Tag"
+      - name: '同步远端 master 与 Tag'
         run: |
           git fetch --force origin master:refs/remotes/origin/master
           git fetch --force --tags origin
 
-      - name: "\u786e\u8ba4 Tag \u6765\u81ea origin/master \u5f53\u524d HEAD"
+      - name: '校验当前提交与版本号'
+        id: release_meta
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
-            echo "::error title=Missing release tag::找不到发版 Tag ${RELEASE_TAG}，请先创建并推送 Tag。"
+          current_commit="$(git rev-parse HEAD^{commit})"
+          master_commit="$(git rev-parse refs/remotes/origin/master^{commit})"
+
+          if [[ "$current_commit" != "$master_commit" ]]; then
+            echo "::error title=Invalid release source::正式发版只能基于当前 origin/master HEAD。当前提交=${current_commit}，origin/master=${master_commit}"
             exit 1
           fi
 
-          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-          master_commit="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+          version="$(node -p "require('./package.json').version")"
 
-          if [[ "$tag_commit" != "$master_commit" ]]; then
-            echo "::error title=Invalid release source::正式发版 Tag 必须指向 origin/master 当前 HEAD。当前 Tag=${RELEASE_TAG}，tag_commit=${tag_commit}，origin/master=${master_commit}"
+          if [[ -z "$version" ]]; then
+            echo "::error title=Missing package version::package.json 中未找到有效的 version。"
             exit 1
           fi
 
-          echo "Verified release source: ${RELEASE_TAG} -> ${tag_commit}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=Invalid package version::package.json version=${version} 不符合约定版本格式。"
+            exit 1
+          fi
+
+          release_tag="v${version}"
+          tag_exists="false"
+
+          if git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" >/dev/null; then
+            tag_exists="true"
+            tag_commit="$(git rev-parse "refs/tags/${release_tag}^{commit}")"
+
+            if [[ "$tag_commit" != "$master_commit" ]]; then
+              echo "::error title=Version tag already exists::当前 package.json.version=${version} 对应的 Tag ${release_tag} 已存在，但它指向 ${tag_commit} 而不是当前 origin/master HEAD ${master_commit}。请在合并到 master 前更新 package.json.version。"
+              exit 1
+            fi
+          fi
+
+          {
+            echo "version=${version}"
+            echo "release_tag=${release_tag}"
+            echo "tag_exists=${tag_exists}"
+            echo "master_commit=${master_commit}"
+          } >> "$GITHUB_OUTPUT"
 
   build:
-    needs: verify_source
-    name: "\u6784\u5efa\u53d1\u5e03\u5305 (${{ matrix.os }})"
+    name: '构建发布包 (${{ matrix.os }})'
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -94,24 +118,24 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
-      - name: "\u68c0\u51fa\u4ed3\u5e93"
+      - name: '检出仓库'
         uses: actions/checkout@v6
 
-      - name: "\u8bbe\u7f6e Node.js"
+      - name: '设置 Node.js'
         uses: actions/setup-node@v6
         with:
           node-version: 24
           package-manager-cache: false
 
-      - name: "\u542f\u7528 Corepack \u5e76\u51c6\u5907 pnpm"
+      - name: '启用 Corepack 并准备 pnpm'
         run: |
           corepack enable
           corepack prepare pnpm@10.18.0 --activate
 
-      - name: "\u5207\u6362 CI \u4e0b\u8f7d\u6e90\u4e3a\u5b98\u65b9"
+      - name: '切换 CI 下载源为官方'
         run: node scripts/prepare-ci-download-config.cjs
 
-      - name: "\u5b89\u88c5 Linux \u7cfb\u7edf\u4f9d\u8d56"
+      - name: '安装 Linux 系统依赖'
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -128,16 +152,16 @@ jobs:
             libpng++-dev \
             xz-utils
 
-      - name: "\u5b89\u88c5\u4f9d\u8d56"
+      - name: '安装依赖'
         run: pnpm install --frozen-lockfile
 
-      - name: "\u6784\u5efa\u5e94\u7528"
+      - name: '构建应用'
         run: pnpm build
 
-      - name: "\u6253\u5305\u53d1\u5e03\u4ea7\u7269"
+      - name: '打包发布产物'
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
 
-      - name: "\u4e0a\u4f20\u53d1\u5e03\u4ea7\u7269"
+      - name: '上传发布产物'
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
@@ -146,33 +170,79 @@ jobs:
           retention-days: 14
 
   publish:
-    name: "\u53d1\u5e03\u5230 GitHub Releases"
-    needs: build
+    name: '创建 Tag 并发布 GitHub Release'
+    needs:
+      - prepare
+      - build
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      EXPECTED_MASTER_COMMIT: ${{ needs.prepare.outputs.master_commit }}
 
     steps:
-      - name: "\u68c0\u51fa\u4ed3\u5e93"
+      - name: '检出仓库'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: "\u540c\u6b65\u8fdc\u7a0b Tag"
-        run: git fetch --force --tags origin
+      - name: '同步远端 master 与 Tag'
+        run: |
+          git fetch --force origin master:refs/remotes/origin/master
+          git fetch --force --tags origin
 
-      - name: "\u4e0b\u8f7d\u53d1\u5e03\u4ea7\u7269"
+      - name: '确认 master 未在构建期间推进'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_commit="$(git rev-parse HEAD^{commit})"
+          latest_master_commit="$(git rev-parse refs/remotes/origin/master^{commit})"
+
+          if [[ "$current_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
+            echo "::error title=Unexpected checkout state::当前工作流检出的提交 ${current_commit} 与预期发版提交 ${EXPECTED_MASTER_COMMIT} 不一致。"
+            exit 1
+          fi
+
+          if [[ "$latest_master_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
+            echo "::error title=master advanced during release::检测到 master 已推进到 ${latest_master_commit}，而本次构建基于旧提交 ${EXPECTED_MASTER_COMMIT}。为避免发布与源码不一致，当前发版已终止。"
+            exit 1
+          fi
+
+      - name: '创建或复用正式 Tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+            tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+
+            if [[ "$tag_commit" != "$EXPECTED_MASTER_COMMIT" ]]; then
+              echo "::error title=Version tag mismatch::Tag ${RELEASE_TAG} 已存在，但它指向 ${tag_commit} 而不是当前发版提交 ${EXPECTED_MASTER_COMMIT}。"
+              exit 1
+            fi
+
+            echo "Reusing existing tag ${RELEASE_TAG}."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}" "${EXPECTED_MASTER_COMMIT}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
+      - name: '下载发布产物'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
           path: release-artifacts
 
-      - name: "\u751f\u6210\u66f4\u65b0\u65e5\u5fd7"
+      - name: '生成更新日志'
         run: node scripts/generate-release-notes.cjs
 
-      - name: "\u751f\u6210 Release \u66f4\u65b0\u8f7d\u8377"
+      - name: '生成 Release 更新载荷'
         shell: bash
         run: |
           node <<'EOF'
@@ -193,10 +263,17 @@ jobs:
           )
           EOF
 
-      - name: "\u53d1\u5e03\u6216\u66f4\u65b0 GitHub Release"
+      - name: '发布或更新 GitHub Release'
         shell: bash
         run: |
           set -euo pipefail
+
+          mapfile -t asset_files < <(find release-artifacts -maxdepth 1 -type f | sort)
+
+          if [[ "${#asset_files[@]}" -eq 0 ]]; then
+            echo "::error title=Missing release artifacts::未找到任何可上传的发版产物。"
+            exit 1
+          fi
 
           release_ids="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id")"
           release_count="$(printf '%s\n' "$release_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -210,13 +287,15 @@ jobs:
           fi
 
           if [[ "$release_count" -eq 0 ]]; then
-            args=(release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --verify-tag --notes-file release-notes.generated.md --title "$RELEASE_TAG")
-            gh "${args[@]}" release-artifacts/**
+            gh release create "$RELEASE_TAG" \
+              -R "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --notes-file release-notes.generated.md \
+              --title "$RELEASE_TAG" \
+              "${asset_files[@]}"
             exit 0
           fi
 
           release_id="$(printf '%s\n' "$release_ids" | sed '/^$/d' | head -n 1)"
-          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" release-artifacts/** --clobber
-
-          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            --input release-update.json
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" "${asset_files[@]}" --clobber
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input release-update.json

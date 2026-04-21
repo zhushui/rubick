@@ -4,6 +4,11 @@
 - Why was it needed?
 - Branch name follows `feat/*`, `fix/*`, `chore/*`, `docs/*`, or `refactor/*`
 
+## Release Readiness
+
+- [ ] This PR is ready to be released immediately after merging into `master`
+- [ ] `package.json.version` has been confirmed or bumped for the version that should be released from this merge
+
 ## Verification
 
 - [ ] `pnpm lint`
