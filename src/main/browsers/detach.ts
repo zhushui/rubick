@@ -12,6 +12,7 @@ import {
   ManagedView,
   setManagedViewBounds,
 } from '@/main/common/managedView';
+import { disableOleWindowFileDrop } from '@/main/common/windowsOleDrop';
 
 export default () => {
   let win: BrowserWindow | undefined;
@@ -71,6 +72,7 @@ export default () => {
 
     createWin.on('close', () => {
       executeHooks('PluginOut', null);
+      disableOleWindowFileDrop(createWin);
       cleanupAttachedView();
     });
     createWin.on('closed', () => {
