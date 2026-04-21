@@ -13,7 +13,7 @@
 ## 环境基线
 
 - Node.js `>=20`
-- 当前 CI 验证基线：Node `24`
+- 当前 CI 与发版工作流基线：Node `24`
 - `pnpm@10`
 - Electron `41`
 
@@ -62,17 +62,27 @@ pnpm package
 - `pnpm package:dir`：执行 unpacked smoke package，与 CI 中的打包烟测保持一致
 - `pnpm package`：执行正式打包
 
-## 分支与发版约束
+## 分支、审查与正式发版
 
-当前 fork 不使用长期 `develop` 分支，而是采用短分支直入 `master` 的维护方式：
+当前 fork 不使用长期 `develop` 分支，而是采用：
 
-- `master` 是默认分支、稳定分支，也是唯一正式发版来源分支
-- 日常开发从最新 `master` 拉 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`
-- 未准备发布的改动不要提前合入 `master`
-- `package.json.version` 是正式版本号的唯一来源
-- PR 合并到 `master` 后，GitHub Actions 会自动创建对应 Tag，并在同一工作流里构建和更新 GitHub Release
-- 如果同名版本 Tag 已存在但不指向当前 `master` HEAD，发版工作流会失败并要求先提升版本号
-- 已公开发布的 Tag 不再重写
+- 短业务分支
+- 审查 PR
+- 手动触发的正式发版工作流
+
+推荐流程：
+
+1. 从最新 `master` 拉 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`
+2. 在业务分支上完成开发
+3. 通过 Pull Request 完成人工审查与 `持续集成 (CI)` 校验
+4. 准备正式发布时，手动触发 `正式发版 (Release)` 工作流
+5. 由工作流自动创建 `release/v<version>` 分支、改写版本号、打包、创建 Release，并在成功后推进 `master`
+
+这里要特别注意：
+
+- 业务分支的 PR 负责代码审查与基础 CI
+- 自动生成的 `release/*` 分支不再重复做人审
+- `master` 不再承担“审完就立刻人工合并”的唯一职责，而是更接近“已经成功发布”的公开主线
 
 维护细则见：
 

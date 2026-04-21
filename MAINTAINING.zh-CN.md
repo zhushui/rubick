@@ -2,25 +2,31 @@
 
 ## 适用范围
 
-本文档用于约束当前 fork 的日常开发、分支管理、正式发版和 GitHub 仓库维护方式。
+本文档用于约束当前 fork 的日常开发、代码审查、正式发版和 GitHub 仓库维护方式。
 
 当前仓库采用的是：
 
 - 短期开发分支
 - 稳定 `master`
-- 仅从 `master` 产生正式发行版
+- 手动触发正式发版工作流
+- 自动创建短期 `release/*` 分支
+- 仅在正式发布成功后才推进 `master`
 
-不再引入长期 `develop` 分支。
+这套流程的目标是尽量保证：
+
+- 日常开发与正式发版解耦
+- 代码审查只在业务分支完成一次
+- `master` 尽量只保留已经成功发布的版本
 
 ## 核心原则
 
-- `master` 是默认分支，也是唯一正式发版来源分支。
-- `master` 只保留已发布代码，或当前正准备立刻发布的那一个提交。
-- 未准备发布的功能、重构、试验性修复，不提前合入 `master`。
-- `package.json.version` 是正式版本号的唯一来源。
-- GitHub Actions 会在 `master` 当前 HEAD 上自动创建对应 Tag，并在同一工作流中构建和更新 GitHub Release。
-- 已公开发布的 Tag 不再重写；如果发现问题，必须通过新的版本号重新发布。
-- 本地手工打包只能作为验证产物，不能视为正式发行版。
+- `master` 是默认分支，也是稳定分支和公开发行版本的主线分支。
+- 日常功能开发、缺陷修复和重构不直接在 `master` 上进行。
+- 正式版本号仍由 `package.json.version` 及子应用包版本统一表示，但这些版本文件会在正式发版工作流中自动改写。
+- 正式 Tag 与 GitHub Release 由 `正式发版 (Release)` 工作流统一创建和管理。
+- 自动生成的 `release/*` 分支不承担业务开发职责，只用于版本封装、正式构建、发布与失败排障。
+- 正式发版失败时会自动清理 Tag 与 Draft Release；`release/*` 分支默认保留，便于排障和重试。
+- 已公开发布的正式 Tag 不重写；如果发现问题，应发布新的版本号。
 
 ## 分支命名约定
 
@@ -32,9 +38,15 @@
 - `docs/<topic>`
 - `refactor/<topic>`
 
-不建议在 `master` 上直接开发，也不建议长期保留无主题的临时分支。
+正式发版时，GitHub Actions 会自动创建：
 
-## 日常开发流程
+- `release/v<version>`
+
+例如：
+
+- `release/v4.3.8-vite.2`
+
+## 日常开发与代码审查流程
 
 推荐固定按下面顺序执行：
 
@@ -42,95 +54,145 @@
 2. 拉取远端更新
 3. 从 `master` 创建短分支
 4. 在短分支完成开发、验证和提交
-5. 推送分支并创建指向 `master` 的 Pull Request
-6. 等待 `CI` 通过后再合并到 `master`
+5. 创建用于代码审查的 Pull Request
+6. 等待 `持续集成 (CI)` 成功，并完成人工代码审查
 
-如果改动还没有准备好发布，就继续停留在短分支，不要合并到 `master`。
+这里的重点是：
+
+- 业务分支上的 Pull Request 负责代码审查和基础 CI
+- 审查通过不等于立刻正式发版
+- `master` 不再作为“审完就直接合”的唯一动作入口
 
 ## 正式发版流程
 
-当前 fork 的正式发版不再手工创建 Tag，而是由 GitHub Actions 在同一工作流中自动完成：
+当前 fork 的正式发版由手动触发的 `正式发版 (Release)` 工作流完成。
 
-1. 确认要发布的改动已经通过 PR 合并到 `master`
-2. 在合并前确认 `package.json.version` 已经设置为本次要发布的正式版本号
-3. 等待 `master` 上的 `CI` 与发版工作流运行
-4. 发版工作流会自动执行以下校验与动作：
-   - 校验当前运行的提交就是 `origin/master` 当前 HEAD
-   - 读取 `package.json.version` 并生成 `v${version}`
-   - 如果同名 Tag 已存在但不指向当前 `master` HEAD，则立即失败
-   - 仅在构建全部成功后创建正式 Tag
-   - 在同一工作流里生成更新日志、上传产物并创建或更新 GitHub Release
-5. 到 Release 页面核对：
-   - Tag 与提交是否一致
-   - 产物是否齐全
-   - 更新摘要是否正确
+维护者需要手动输入两个参数：
 
-## 版本纪律
+- `source_branch`
+- `version`
 
-- 合并到 `master` 的改动必须默认具备“可以立刻正式发布”的状态。
-- 如果这次合并应该形成新的公开版本，必须在合并前就把 `package.json.version` 调整到目标版本。
-- 如果 `master` 上出现了新的提交，但 `package.json.version` 仍对应旧 Tag，发版工作流会直接失败，提醒你先提升版本号。
-- 正式版本号继续沿用 `v*` 规范，例如：
-  - `v4.3.8-vite.1`
-  - `v4.3.8-vite.2`
+例如：
 
-## 失败与重试约束
+- `source_branch = feat/plugin-compat-and-interaction-fixes`
+- `version = 4.3.8-vite.2`
 
-- 发版工作流在构建成功前不会创建 Tag，避免留下“Tag 已发但产物失败”的半成品版本。
-- 如果构建期间 `master` 又推进到了新的提交，旧的发版工作流会终止，避免发行资源与源码不一致。
-- 如果 Tag 已经创建，但 Release 上传或更新失败，可以对当前 `master` HEAD 手动重跑同一个发版工作流。
-- 如果版本已经公开发布，不要删除后重打；应当修复问题、提升版本号并重新发布。
+工作流会自动执行以下步骤：
 
-## 热修复流程
+1. 校验 `source_branch` 存在
+2. 校验版本号格式合法
+3. 校验同名正式 Tag 不存在
+4. 校验 `source_branch` 当前 HEAD 已经有成功的 `持续集成 (CI)` 记录
+5. 自动创建 `release/v<version>` 分支
+6. 自动改写这些版本文件：
+   - `package.json`
+   - `feature/package.json`
+   - `tpl/package.json`
+   - `detach/package.json`
+   - `guide/package.json`
+7. 校验自动生成的 release 分支只修改了允许机器修改的版本文件
+8. 运行正式构建矩阵并上传产物
+9. 创建正式 Tag
+10. 创建 Draft Release 并上传所有安装包与更新元数据
+11. 仅在前面全部成功后，将 `master` 快进到本次发布提交
+12. 将 Draft Release 转为正式发布
+13. 成功后自动删除 `release/v<version>` 分支
 
-热修复也遵循同一套规则：
+## 代码审查与 CI 不重复的边界
 
-1. 从当前 `master` 拉出 `fix/*` 分支
-2. 完成修复并验证
-3. 视情况提升 `package.json.version`
-4. 通过 PR 合并回 `master`
-5. 由自动化创建新 Tag 并发布新的正式版本
+为了避免在 release 分支上重复做已经完成的审查，这套流程明确区分：
 
-## 禁止事项
+### `持续集成 (CI)` 负责
 
-以下行为不应作为正式维护流程的一部分：
+- 业务分支或 PR 上的基础校验
+- `pnpm lint`
+- `pnpm build`
+- `pnpm package:dir`
+- 与代码审查配套的基础质量门槛
 
-- 直接把未完成改动推到 `master`
-- 直接在 `master` 上累积“以后再说”的开发状态
-- 在未确认版本号的情况下把 PR 合并到 `master`
-- 从旧提交、功能分支或本地偏离远端的提交手工发布正式版
-- 重写已经公开发布的 Tag
-- 把本地手工打包结果当作正式发行版
+### `正式发版 (Release)` 负责
 
-## GitHub 仓库设置建议
+- 校验源分支最新提交已经通过 CI
+- 自动创建 `release/*` 分支
+- 自动改写版本号文件
+- 正式构建矩阵与打包产物上传
+- Draft Release 创建与正式发布
+- 成功推进 `master`
+- 失败清理与必要回滚
 
-### `master` 分支保护
+也就是说：
+
+- 人工代码审查只在业务分支完成一次
+- release 分支不再重复做人审
+- release 工作流只做正式发版专属动作
+
+## 失败场景与补偿策略
+
+### 构建前或构建中失败
+
+- `master` 不变
+- 正式 Tag 不保留
+- Draft Release 不保留
+- 自动创建的 `release/*` 分支保留，用于排障
+
+### Draft Release 创建后、推进 `master` 前失败
+
+- 自动删除本次 Tag
+- 自动删除 Draft Release
+- `master` 不变
+- `release/*` 分支保留
+
+### 推进 `master` 后、正式发布前失败
+
+- 自动删除本次 Tag
+- 自动删除 Draft Release
+- 自动将 `master` 回滚到发版前的稳定提交
+- `release/*` 分支保留
+
+这里需要特别注意：
+
+- 如果要允许自动回滚 `master`，发布机器人必须具备对 `master` 的特殊推送权限或绕过能力
+
+## GitHub Secrets 要求
+
+当前正式发版流程至少需要配置：
+
+- `RELEASE_BOT_TOKEN`
+
+这个令牌需要能完成：
+
+- 创建和删除 `release/*` 分支
+- 创建和删除 Tag
+- 创建、删除和更新 GitHub Release
+- 推进 `master`
+- 在失败时回滚 `master`
+
+推荐长期方案是使用 GitHub App 或专门的 bot 账号；如果先用个人 PAT，也应明确仅用于发版机器人。
+
+## `master` 分支保护建议
 
 建议在 GitHub 仓库设置中对 `master` 开启：
 
 - Require a pull request before merging
 - Require status checks to pass before merging
-- Block force pushes
 - Block branch deletion
 
-当前 fork 以单维护者为主，因此：
+还建议补上：
 
-- 不强制要求额外审批人数
-- 不强制要求额外 Code Review
-- 仅在工作流故障或紧急 hotfix 场景下，才考虑管理员人工绕过
+- Restrict who can push to matching branches
+- 只允许发版机器人和维护者本人作为例外
 
-### 其他建议
+如果你希望自动回滚 `master` 也能成功，还需要：
 
-- 开启合并后自动删除 head branch
-- 保持默认分支为 `master`
-- 保持 Release 工作流只以 `master` 当前 HEAD 为准
+- 允许发版机器人在必要时覆盖 `master`
+- 或为机器人配置足够的 bypass 权限
 
 ## 对外口径
 
 仓库首页、Release 页面和维护说明应保持以下口径一致：
 
-- `master` 是稳定分支，也是唯一正式发版来源分支
-- 正式版本号来自 `package.json.version`
-- 正式 Tag 与 GitHub Release 由 GitHub Actions 自动生成
-- 未打 Tag 的分支代码不代表正式发行版
+- `master` 是稳定分支，也是公开发行主线
+- 业务分支的 PR 用于代码审查与 CI
+- 正式版本由 `正式发版 (Release)` 工作流从已审查分支生成
+- 自动生成的 `release/*` 分支只承担版本封装与正式发版职责
 - 已发布版本请以 GitHub Releases 与 Tag 为准

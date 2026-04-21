@@ -6,8 +6,9 @@
 
 ## Release Readiness
 
-- [ ] This PR is ready to be released immediately after merging into `master`
-- [ ] `package.json.version` has been confirmed or bumped for the version that should be released from this merge
+- [ ] This branch has completed the intended code review
+- [ ] `持续集成 (CI)` has passed for the latest branch commit
+- [ ] Public release, if needed, will be triggered through the `正式发版 (Release)` workflow
 
 ## Verification
 

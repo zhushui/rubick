@@ -49,12 +49,13 @@ This repository is a maintained public fork of [rubickCenter/rubick](https://git
 
 ## Branch And Release Policy
 
-- `master` remains the default branch, the stable branch, and the only source branch for formal releases
+- `master` remains the default branch, the stable branch, and the public release line
 - Daily work should start from the latest `master` and use short-lived branches such as `feat/*`, `fix/*`, `chore/*`, `docs/*`, and `refactor/*`
-- `package.json.version` is the single source of truth for formal versions
-- After a PR is merged into `master`, GitHub Actions automatically creates the matching tag on the current `master` HEAD and publishes the GitHub Release in the same workflow
-- If the matching version tag already exists on another commit, the release workflow fails until the version is bumped
-- Unreleased branch code is not a formal release; published versions must be traced through GitHub Releases and tags
+- Pull requests on business branches are used for code review and the `持续集成 (CI)` workflow
+- Formal releases are produced by manually triggering the `正式发版 (Release)` workflow
+- The release workflow automatically creates `release/v<version>`, updates version files, builds release artifacts, creates the tag, and promotes `master` only after release preparation succeeds
+- On failure, the workflow cleans up draft release state and tags while keeping the generated `release/*` branch for troubleshooting
+- Published versions must be tracked through GitHub Releases and tags
 
 ## Documentation
 
@@ -76,9 +77,9 @@ pnpm package
 ```
 
 - Node baseline: `>=20`
-- Verified baseline in CI: Node `24`
+- Verified baseline in CI and release automation: Node `24`
 - `pnpm install` ensures Electron binaries are available and rebuilds native dependencies for Electron
-- `pnpm package:dir` is the smoke-package command used in CI before formal releases
+- `pnpm package:dir` is the smoke-package command used in CI
 
 ## How To Use Rubick
 
@@ -97,7 +98,8 @@ This fork still benefits from the upstream plugin ecosystem and related resource
 ## Feedback And Contribution
 
 - Please use this fork's [Issues](https://github.com/zhushui/rubick/issues) and Pull Requests for fork-specific bugs, maintenance requests, and improvements
-- Merges into `master` are treated as release-ready, so finish development and verification on short-lived branches first
+- Business-branch pull requests are mainly for code review and base CI, not for immediate public release by themselves
+- When a reviewed branch is ready for a public version, use the `正式发版 (Release)` workflow instead of manually managing tags or accumulating pending release code on `master`
 - If an issue can be reproduced on upstream Rubick as well, it is still helpful to link or report it upstream
 - Documentation, runtime compatibility fixes, packaging fixes, and test improvements are especially welcome
 
