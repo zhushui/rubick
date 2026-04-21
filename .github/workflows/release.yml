@@ -14,7 +14,7 @@ on:
         type: string
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   contents: write
@@ -24,7 +24,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify_source:
+    name: "\u6821\u9a8c\u53d1\u7248\u6765\u6e90"
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: "\u68c0\u51fa\u4ed3\u5e93"
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: "\u540c\u6b65\u8fdc\u7a0b master \u4e0e Tag"
+        run: |
+          git fetch --force origin master:refs/remotes/origin/master
+          git fetch --force --tags origin
+
+      - name: "\u786e\u8ba4 Tag \u6765\u81ea origin/master \u5f53\u524d HEAD"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+            echo "::error title=Missing release tag::找不到发版 Tag ${RELEASE_TAG}，请先创建并推送 Tag。"
+            exit 1
+          fi
+
+          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          master_commit="$(git rev-parse "refs/remotes/origin/master^{commit}")"
+
+          if [[ "$tag_commit" != "$master_commit" ]]; then
+            echo "::error title=Invalid release source::正式发版 Tag 必须指向 origin/master 当前 HEAD。当前 Tag=${RELEASE_TAG}，tag_commit=${tag_commit}，origin/master=${master_commit}"
+            exit 1
+          fi
+
+          echo "Verified release source: ${RELEASE_TAG} -> ${tag_commit}"
+
   build:
+    needs: verify_source
     name: "\u6784\u5efa\u53d1\u5e03\u5305 (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
     strategy:
@@ -53,7 +91,7 @@ jobs:
     env:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
       - name: "\u68c0\u51fa\u4ed3\u5e93"

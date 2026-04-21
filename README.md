@@ -9,7 +9,7 @@ English | [简体中文](./README.zh-CN.md)
   <img alt="downloads" src="https://img.shields.io/github/downloads/zhushui/rubick/total" />
   <a href="https://github.com/zhushui/rubick/releases"><img alt="latest release" src="https://img.shields.io/github/package-json/v/zhushui/rubick" /></a>
   <a href="https://github.com/zhushui/rubick/actions/workflows/main.yml"><img alt="ci status" src="https://img.shields.io/github/actions/workflow/status/zhushui/rubick/main.yml?label=ci" /></a>
-  <a href="https://github.com/zhushui/rubick/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
+  <a href="https://github.com/zhushui/rubick/blob/master/LICENSE"><img alt="license" src="https://img.shields.io/github/license/zhushui/rubick" /></a>
   <a href="https://github.com/zhushui/rubick/stargazers"><img alt="github stars" src="https://img.shields.io/github/stars/zhushui/rubick?style=social" /></a>
 </div>
 
@@ -48,9 +48,17 @@ It keeps the Rubick product identity and plugin ecosystem compatibility, while t
 
 - [Fork releases](https://github.com/zhushui/rubick/releases)
 
+## Branch And Release Policy
+
+- `master` remains the default branch, the stable branch, and the only source branch for formal releases.
+- Daily work should start from the latest `master` and use short-lived branches such as `feat/*`, `fix/*`, `chore/*`, `docs/*`, and `refactor/*`.
+- Formal release tags must be created from the exact current `origin/master` HEAD.
+- Unreleased branch code is not a formal release. Published versions must be traced through GitHub Releases and tags.
+
 ## Documentation
 
 - [Development Guide (zh-CN)](./DEVELOPMENT.zh-CN.md)
+- [Maintenance And Release Policy (zh-CN)](./MAINTAINING.zh-CN.md)
 - [Plugin Runtime Compatibility (zh-CN)](./PLUGIN_RUNTIME.zh-CN.md)
 - [Upstream Rubick docs](https://rubickCenter.github.io/docs/)
 - [Upstream project](https://github.com/rubickCenter/rubick)
@@ -89,6 +97,7 @@ This fork still benefits from the upstream plugin ecosystem and related resource
 ## Feedback And Contribution
 
 - Please use this fork's [Issues](https://github.com/zhushui/rubick/issues) and Pull Requests for fork-specific bugs, maintenance requests, and improvements.
+- Use short-lived branches and open Pull Requests targeting `master` instead of accumulating unreleased work directly on `master`.
 - If an issue can be reproduced on upstream Rubick as well, it is still helpful to link or report it upstream.
 - Documentation, runtime compatibility fixes, packaging fixes, and test improvements are especially welcome.
 

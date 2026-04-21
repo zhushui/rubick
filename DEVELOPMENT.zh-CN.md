@@ -63,6 +63,20 @@ pnpm package
 - `pnpm package:dir`：执行 unpacked smoke package，和 CI 的打包烟测保持一致
 - `pnpm package`：执行正式打包
 
+## 分支与发版约束
+
+当前 fork 不使用长期 `develop` 分支，而是采用短分支直入 `master` 的维护方式：
+
+- `master` 是默认分支、稳定分支，也是正式发版来源分支
+- 日常开发从最新 `master` 拉 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`
+- 未准备发布的改动不要提前合入 `master`
+- 正式版本只允许从当前 `origin/master` 的精确 HEAD 创建并推送 Tag
+- 已公开发布的 Tag 不再重写，修复问题请发布新的版本号
+
+维护细则见：
+
+- [维护与发版规范](./MAINTAINING.zh-CN.md)
+
 ## 目录说明
 
 - `src/renderer`：主窗口 renderer

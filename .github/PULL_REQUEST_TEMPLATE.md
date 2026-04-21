@@ -2,6 +2,7 @@
 
 - What changed?
 - Why was it needed?
+- Branch name follows `feat/*`, `fix/*`, `chore/*`, `docs/*`, or `refactor/*`
 
 ## Verification
 
@@ -19,3 +20,4 @@
 
 - [ ] README updated when user-facing behavior changed
 - [ ] Runtime/development docs updated when build or bridge contracts changed
+- [ ] Branch/release policy docs updated when release discipline or maintenance flow changed
