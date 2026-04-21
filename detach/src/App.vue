@@ -37,8 +37,10 @@ const plugInfo = ref({});
 window.initDetach = (pluginInfo) => {
   plugInfo.value = pluginInfo;
   showInput.value =
-    pluginInfo.subInput &&
-    (!!pluginInfo.subInput.value || !!pluginInfo.subInput.placeholder);
+    !!pluginInfo.subInput &&
+    (!!pluginInfo.subInput.active ||
+      !!pluginInfo.subInput.value ||
+      !!pluginInfo.subInput.placeholder);
   localStorage.setItem('rubick-system-detach', JSON.stringify(pluginInfo));
 };
 
@@ -72,13 +74,39 @@ const close = () => {
 
 Object.assign(window, {
   setSubInputValue: ({ value }) => {
+    if (!plugInfo.value.subInput) {
+      plugInfo.value.subInput = { value: '', placeholder: '', active: true };
+    }
     plugInfo.value.subInput.value = value;
+    plugInfo.value.subInput.active = true;
+    showInput.value = true;
   },
-  setSubInput: (placeholder) => {
-    plugInfo.value.subInput.placeholder = placeholder;
+  setSubInput: (payload) => {
+    const nextPlaceholder =
+      typeof payload === 'string' ? payload : payload?.placeholder || '';
+    if (!plugInfo.value.subInput) {
+      plugInfo.value.subInput = { value: '', placeholder: '', active: true };
+    }
+    plugInfo.value.subInput.placeholder = nextPlaceholder;
+    plugInfo.value.subInput.active = true;
+    showInput.value = true;
   },
   removeSubInput: () => {
     plugInfo.value.subInput = null;
+    showInput.value = false;
+  },
+  focusSubInput: () => {
+    const input = document.querySelector('.detach input');
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+    }
+  },
+  selectSubInput: () => {
+    const input = document.querySelector('.detach input');
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
   },
 });
 

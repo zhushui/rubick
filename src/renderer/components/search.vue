@@ -310,11 +310,46 @@ const getCurrentPluginLogo = () =>
     config.value.perf.custom.logo
   );
 
+const getNativeSearchInput = () => {
+  const fromQuery = document.querySelector(
+    '.main-input input, .main-input textarea'
+  );
+  if (
+    fromQuery instanceof HTMLInputElement ||
+    fromQuery instanceof HTMLTextAreaElement
+  ) {
+    return fromQuery;
+  }
+
+  const searchComponent = mainInput.value as any;
+  const componentInput =
+    searchComponent?.input ||
+    searchComponent?.$el?.querySelector?.('input, textarea');
+
+  return componentInput instanceof HTMLInputElement ||
+    componentInput instanceof HTMLTextAreaElement
+    ? componentInput
+    : null;
+};
+
 const newWindow = () => {
   window.rubick.internal.detachPlugin();
 };
 
 const mainInput = ref(null);
+Object.assign(window, {
+  focusSubInput: () => {
+    const input = getNativeSearchInput();
+    input?.focus();
+  },
+  selectSubInput: () => {
+    const input = getNativeSearchInput();
+    if (!input) return;
+    input.focus();
+    input.select?.();
+  },
+});
+
 window.rubick.onShow(() => {
   (mainInput.value as unknown as HTMLDivElement).focus();
 });
